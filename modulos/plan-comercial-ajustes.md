@@ -1,7 +1,7 @@
 # Plan: Ajustes al módulo de Pedidos (comercial) según el `main` de la demo
 
 **Schema:** `comercial` · **Contenedor:** comercial (3102) · **Librería:** `libs/comercial/pedidos` (ya existe) · **Dueño:** la sesión principal (Pumping/Comercial)
-**Estado:** por construir · **Ola:** 2 (Pumping restante y FCR dependen de partes de esto)
+**Estado:** EN CURSO (ver `ESTADO-SESION-PRINCIPAL.md`: C1–C6 y C8 hechos en backend; faltan frontend, C7, C9 y C10) · **Ola:** 2 (Pumping restante y FCR dependen de partes de esto)
 **Origen:** `04-REVISION-CONTRA-DEMO-MAIN.md` (hallazgos 5, 6, 11). Fuentes en la demo `main`: `dynadrill-backend/libs/domains/facturacion/*` (en especial `facturacion-domain.service.ts`, `pedidos/solicitudes-despacho-bodega.controller.ts`, `precarga-fcr/`) y `operaciones/src/ticket-prefactura.controller.base.ts`; frontend: `features/facturacion/*` y los commits del 02 al 07/10/2026.
 
 El módulo de Pedidos ya está construido en el portal nuevo (pedido, documentos operativos, prefactura, guía, orden de trabajo, cierre). La demo `main` agregó comportamientos que **cambian el contrato con Pumping y FCR**. Este plan los lista.

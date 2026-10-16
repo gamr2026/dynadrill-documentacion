@@ -40,6 +40,8 @@ Los consume `libs/operaciones/pumping/src/consumers/requisitos-externos.consumer
 | `flota.gerenciamiento_viaje.aprobado` | Flota | `flota` | `ticketId`, `tipo` (`salida` o `retorno`) | cumple `gerenciamiento_viaje_salida_aprobado` (condición para salir de la revisión de reportes de salida) o `gerenciamiento_viaje_retorno_aprobado` (para salir del control de retorno) |
 | `flota.gerenciamiento_viaje.rechazado` | Flota | `flota` | `ticketId`, `tipo` | reabre esa condición |
 
+> **Estado de QHSE (16/10/2026): `qhse.epi.despachada` y `qhse.epi.revertida` ya son VIGENTES** (los publica el contenedor `qhse`, `source: 'qhse'`, con `ticketId`, `usuarioId` y además `entregaId`, `numero`, `codigo`, `ticketNumero`, `pedidoCodigo`, `trabajador`). QHSE publica también `qhse.epi.solicitada|aprobada|rechazada`.
+>
 > El `actor.userId` del evento queda como quien cumplió el requisito. La inspección de vehículos aplica **solo a unidades de tipo Transporte** (demo `main`); el gerenciamiento de viaje lo solicita el Conductor y lo autoriza el Supervisor si el riesgo es BAJO, o el Jefe de Base o el Gerente HSE si es MEDIO/ALTO.
 >
 > **Corrección pendiente en Pumping** (la hace la sesión de Pumping antes de que Flota empiece): el módulo dueño de la inspección de vehículos es **Flota**, no Mantenimiento; hoy el consumidor y el catálogo dicen `mantenimiento.inspeccion_vehiculo.*`. Se renombra a `flota.*` (ver el registro de cambios).
@@ -70,6 +72,9 @@ Los consume `libs/operaciones/pumping/src/consumers/requisitos-externos.consumer
 
 ### 4.6 QHSE ← Pumping (casos que QHSE abre)
 - QHSE consume `operaciones.pumping.asignacion_realizada` y abre una **solicitud de EPI por cada operador** (`operadoresUnidades`/`asignados`) y consulta de términos. Consume `operaciones.pumping.ticket_creado` para preparar el PTW del pedido.
+
+### 4.12 QHSE → Pumping (consulta de aceptaciones de términos) — **Propuesto**
+- Las aceptaciones las guarda Pumping (`pumping.aceptacion_terminos`); QHSE no lee ese schema (otro contenedor). Pumping expone `GET /api/operaciones/pumping/terminos/aceptaciones?cedula=&nombre=` (permiso `pumping.terminos.historial`) que devuelve `{ id, ticketId, ticketNumero, pedidoCodigo, operador: { id, nombre, cedula }, versionCodigo, textoHash, aceptadoAt }[]`, con la cédula obtenida del perfil de la cuenta (JOIN). La pantalla de QHSE solo lo consume.
 
 ### 4.7 Flota ← Pumping (casos de inspección)
 - Flota consume `operaciones.pumping.asignacion_realizada` y deja disponible, por cada `{ usuarioId, vehiculoId }`, el **caso de inspección de vehículos** (pendiente → por aprobar → aprobada). Publica los eventos de la sección 3.

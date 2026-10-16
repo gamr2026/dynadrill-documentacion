@@ -1,7 +1,7 @@
 # Plan: Inventario
 
 **Schema:** `inventario` · **Contenedor:** operaciones (3103) · **Librería:** `libs/operaciones/inventario` (`@dyn/inventario`) · **Prefijo HTTP:** `/api/operaciones/inventario`
-**Estado:** por construir · **Ola:** 1 (es el más pequeño; Pumping y FCR lo necesitan)
+**Estado (16/10/2026): I1 construido, falta verificar (lint, build, `ng test`, `ng build`) y reiniciar el contenedor; I2–I4 por hacer. Ver «Estado de la sesión» al final.** · **Ola:** 1 (es el más pequeño; Pumping y FCR lo necesitan)
 **Lea antes:** `00`, `01`, `02` (contratos 4.1), `03` (D2, D3), `04-REVISION-CONTRA-DEMO-MAIN.md` y `integracion-as2/CONSULTAS-PARA-ASINFO.md`. **Revisado contra el `main` de la demo (08/10/2026): el dominio de inventario no cambió desde el 24/09.** La rama `feature/inventario-columnas-y-precios-reales` **ya está fusionada en `main`**: trae datos reales para la carga inicial en `dynadrill-backend/prisma/data/` (`inventario.json` con 641 artículos, `descuentos.json`, `listas-precios/` con 6 listas, stock del kardex) y el script `import-datos-reales.ts` (upsert idempotente por código).
 
 ## 1. Objetivo
@@ -81,3 +81,40 @@ Integración: saldo correcto y sin negativos con movimientos simultáneos (como 
 ## 12. Preguntas abiertas entre módulos
 
 _(Pumping: ¿llamará a `registrarSalida` dentro de su transacción de asignación o por evento? Propuesta: dentro de la misma transacción, porque ambos son del contenedor operaciones.)_
+
+---
+
+## Estado de la sesión (16/10/2026) — tramo I1
+
+### Lo que se hizo (todo en `dynadrill-platform/libs/operaciones/inventario`, sin commits todavía)
+- **Librería nueva** `@dyn/inventario` (alias en `tsconfig.base.json`, scripts `db:migrate:inventario`, `db:seed:inventario`, `db:cargar:inventario` en `package.json`, `InventarioModule` importado en `apps/operaciones/src/app/app.module.ts`).
+- **3 migraciones aplicadas** en la base de desarrollo: `20261018120000_init` (catálogos `categoria_articulo`, `subcategoria_articulo`, `unidad_stock`, `motivo_movimiento`; `articulo`, `articulo_codigo`, `articulo_parte`; kardex `movimiento` con `secuencia` identity, saldo por bodega, CHECK de cantidad/saldo/origen-tipo/referencias, FK a `catalogos.bodega` e `identidad.usuario`, `REVOKE UPDATE, DELETE` a `app_operaciones` = **kardex inmutable**), `20261018121000_categoria_quimica` (`es_quimica`) y `20261018122000_categoria_lleva_partes` (`lleva_partes`).
+- **Semilla** (`db:seed:inventario`): 13 unidades y 9 motivos (cada motivo fija tipo y origen; `manual` = lo que Bodega puede elegir).
+- **Carga inicial** (`db:cargar:inventario`, idempotente) desde `prisma/data/inventario.json` y `descuentos.json` del `main` de la demo: 4 categorías, 28 subcategorías, **641 artículos**, **303 saldos iniciales** en Bodega Matriz, 534 descuentos sugeridos. Las listas de precios NO son de Inventario (ya las cargó Pedidos).
+- **Backend**: `/api/operaciones/inventario/{articulos, articulos/:id, articulos/:id/movimientos, articulos/:id/partes, partes/:id, movimientos, stock, categorias, subcategorias, unidades, motivos, bodegas}` con los permisos ya existentes (`articulos.ver` / `articulos.gestionar`; no se agregaron permisos). Núcleo `registrarEnKardex` (bloqueo de fila del artículo, saldo por bodega, rechaza stock negativo, fecha futura, motivo/bodega inválidos). Servicio exportado `MovimientosService.registrar(tx, entrada, actor)` listo para Pumping (I2).
+- **Evento publicado**: `operaciones.inventario.movimiento_registrado` (el sobre exige que el nombre empiece por el contenedor `operaciones.`; por eso **no** se usan los nombres `inventario.*` del contrato 4.1). Datos: `movimientoId, articuloId, articuloCodigo, bodegaId, tipo, origen, cantidad, saldoResultante, pedidoId, ticketId`.
+- **Pruebas de integración** (`RUN_INTEGRATION=1 npx jest` en la carpeta del módulo): **18 de 18 en verde** — incluye 25 salidas simultáneas sobre 20 (salen 20, saldo 0), 30 entradas simultáneas, inmutabilidad (permission denied), CHECK de la base, altas simultáneas de partes, permisos y carga idempotente.
+- **Frontend** (`dynadrill-frontend-platform/src/app/features/inventario`): modelo y servicio nuevos (`inventario-plataforma.model.ts`, `inventario-plataforma.service.ts`, con specs); reescritos lista de artículos, detalle con kardex por bodega y stock por bodega, formulario de artículo (selects de categoría/subcategoría/unidad, costo, descuento), diálogo de movimiento (bodega + motivo + cantidad, sin tipo ni responsable a mano) y diálogo de partes. **Los servicios y modelos de la demo (`ArticulosService`, `MovimientosInventarioService`, `articulo.model.ts`, partes) NO se tocaron**: los usan Pumping, FCR, Dashboard y Nuevo pedido, que siguen contra la demo hasta que migren.
+- Documentación: sección `## Inventario` (IN1–IN9) en `facturacion/CONSULTAS-PARA-DYNADRILL.md`.
+
+### Lo que falta del tramo I1 (en este orden)
+1. Tomar `.bloqueos/nx.lock` y correr `npx nx run-many -t lint test build -p inventario operaciones --parallel=1`; corregir lo que salga (el módulo compila con `tsc`, pero no se ha corrido `lint` ni `build` de nx).
+2. Frontend: `ng test` y `ng build` (con el bloqueo) — **no se han corrido**; los componentes nuevos no se han compilado con Angular, puede haber errores de plantilla o de tipos.
+3. Reiniciar el contenedor `operaciones` (3103) y probar la pantalla a mano con un Bodeguero (lista, detalle, nuevo artículo, movimiento, partes de una categoría «FISHING & TOOLS»).
+4. Confirmar que mis líneas siguen en `package.json`, `tsconfig.base.json` y `app.module.ts` (otras sesiones editan esos archivos).
+5. Commit local en la rama `modulo/inventario` **sin cambiar de rama el árbol compartido** (otras sesiones trabajan en el mismo): usar un índice temporal (`GIT_INDEX_FILE`, `git read-tree`, `git add` solo de `libs/operaciones/inventario`, `git write-tree`, `git commit-tree`, `git update-ref refs/heads/modulo/inventario`). Los archivos compartidos mezclan cambios de otras sesiones: no confirmarlos enteros. Frontend: igual, solo `src/app/features/inventario`. Nada de push, ni main, ni `dynadrill-backend` / `dynadrill-frontend`.
+6. Actualizar `02-CONTRATOS-ENTRE-MODULOS.md` (4.1) con los nombres `operaciones.inventario.*`.
+
+### Lo que falta del módulo
+- **I2** — contrato 4.1 con Pumping: salida de químicos al ticket (`salida_ticket`), consumo y devolución (`devolucion_ticket`), tabla `ticket_articulo` (asignada / usada / devuelta); eventos `operaciones.inventario.salida_registrada` y `.devolucion_registrada`; acordar con Pumping que llame a `MovimientosService.registrar` dentro de su transacción (propuesta). Pruebas.
+- **I3** — consumir `comercial.despacho.solicitado|resuelto` (origen `despacho_bodega`), pantalla de despachos con documento de respaldo obligatorio y hoja MSDS opcional (usar `categoria.es_quimica`); hoy las pantallas `despachos` y `vehiculos` siguen contra la demo (vehículos es de Flota).
+- **I4** — herramientas para FCR; conciliación con AS2 (`articulo.as2_id`) cuando Asinfo exponga productos y existencias.
+- Mínimos de stock y evento `stock.bajo_minimo` (IN4), plantillas de avisos si se confirman; unidad como catálogo compartido (IN9).
+
+### Decisiones que necesita del usuario
+IN1 (bodega del saldo inicial), IN2 (unidades reales), IN3 (datos negativos del export), IN5 (quién autoriza ajustes), IN8 (categorías con partes/químicos) y D3/IN7 (fuente de verdad con AS2). Ver `facturacion/CONSULTAS-PARA-DYNADRILL.md`, sección Inventario.
+
+### Notas técnicas para quien continúe
+- La primera `prisma migrate deploy` de un schema nuevo falla con «migration persistence is not initialized»: crear a mano `<schema>._prisma_migrations` (mismo DDL que `pumping._prisma_migrations`) y repetir.
+- En Bash, los *heredocs* largos fallan: usar la herramienta de escritura. Los `.ts`/`.html` del frontend tienen CRLF: al editar por script, normalizar y restaurar.
+- Las rutas en las pruebas llevan el prefijo global `/api`.

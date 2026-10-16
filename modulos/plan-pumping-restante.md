@@ -1,3 +1,5 @@
+> Estado de la sesión y pendientes: ver `ESTADO-SESION-PRINCIPAL.md`.
+
 # Plan: Pumping restante (después del traslado de salida)
 
 **Schema:** `pumping` · **Contenedor:** operaciones · **Librería:** `libs/operaciones/pumping` (ya existe) · **Prefijo:** `/api/operaciones/pumping`

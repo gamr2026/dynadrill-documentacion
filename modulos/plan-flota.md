@@ -1,7 +1,7 @@
 # Plan: Flota
 
 **Schema:** `flota` · **Contenedor:** operaciones (3103) · **Librería:** `libs/operaciones/flota` (`@dyn/flota`) · **Prefijo HTTP:** `/api/operaciones/flota`
-**Estado:** por construir · **Ola:** 1 (es prerrequisito de Mantenimiento, Pumping y FCR)
+**Estado:** F1 en curso (backend terminado y verificado; frontend a medias) · **Ola:** 1 (es prerrequisito de Mantenimiento, Pumping y FCR)
 **Lea antes:** `00-CONTEXTO-COMPARTIDO.md`, `01-REGLAS-DE-COORDINACION.md`, `02-CONTRATOS-ENTRE-MODULOS.md`, `03-DECISIONES-PENDIENTES.md` (D2, D13) y `04-REVISION-CONTRA-DEMO-MAIN.md` (hallazgos 2 y 3). **Revisado contra el `main` de la demo (08/10/2026).**
 
 ## 1. Objetivo
@@ -92,3 +92,39 @@ Integración con base real: lecturas (la vigente es la última), preventivos A/B
 ## 12. Preguntas abiertas entre módulos
 
 _(escriba aquí lo que necesite de otra sesión, con su nombre; quien lo reciba lo contesta debajo)_
+
+
+## 13. Estado de avance (actualizado 16/10/2026, sesión Flota)
+
+### Objetivo de la sesión
+Construir el módulo Flota por tramos (F1 a F5). Hoy solo se trabajó el **tramo F1 (unidades y lecturas)**.
+
+### Hecho en F1 (backend, verificado)
+- **Librería** `libs/operaciones/flota` (`@dyn/flota`, alias en `tsconfig.base.json`, scripts `db:migrate:flota` y `db:seed:flota` en `package.json`, `FlotaModule` importado en `apps/operaciones/src/app/app.module.ts`).
+- **Migraciones aplicadas** (schema `flota`): `20261016170000_unidades_y_lecturas` y `20261016173000_preventivo_responsable_opcional`. Tablas: `proveedor_mantenimiento`, `regla_preventiva` (reglas MAN-002 como datos), `unidad`, `unidad_lectura`, `unidad_preventivo`; 7 enums; FK reales a `catalogos.vehiculo`, `identidad.usuario` y `archivos.archivo`; sin JSON ni copias de nombre. Nota operativa: Prisma no inicializó `flota._prisma_migrations`; se creó a mano (como `postgres`, dueño `dyn_migrator`).
+- **Semilla** aplicada: 5 reglas, 1 proveedor y las 10 unidades de la demo (PUM-07, PUM-15, 4-CTV-03, PMP-14, PUM-03, CIS-02, GEN-01, GEN-02, CAM-04, CAM-08) con lecturas y últimos preventivos.
+- **API** `/api/operaciones/flota`: `unidades` (listar, ficha, crear, editar, baja/reactivación), `unidades/alertas`, `unidades/:id/lecturas` (GET/POST), `unidades/:id/preventivos` (GET/POST), `proveedores-mantenimiento`. Servicios exportados para Mantenimiento: `UnidadesService`, `LecturasService.registrar(...)`, `PreventivosService.registrar(...)` y `calcularAlertas`.
+- **Reglas**: la lectura nunca baja respecto de la línea de tiempo; el preventivo B reinicia también el A; transporte cada 5.000 km (tolerancia 500); auxiliares y cisternas por tiempo (6 meses); un transporte sin preventivo previo no genera alerta (decisión conservadora).
+- **Eventos** (con `source: 'flota'`, vía `createEvent`; `bus.create` no sirve porque fija el contenedor `operaciones`): `flota.unidad.creada`, `flota.unidad.lectura_registrada`, `flota.unidad.preventivo_registrado`.
+- **Permisos** nuevos (7): `flota.unidades.ver|crear|editar|inactivar`, `flota.lecturas.registrar`, `flota.preventivos.registrar`, `flota.proveedores.gestionar`. Semilla de identidad corrida.
+- **Pruebas**: 9 unitarias (alertas) y 16 de integración con base real, todas verdes. `nx lint test build` de flota, authz y operaciones en verde. Contenedor operaciones reiniciado (3103) y respondiendo.
+
+### Hecho en F1 (frontend, parcial; NO verificado, sin `ng build` ni `ng test`)
+En `dynadrill-frontend-platform/src/app/features/flota/`: modelo, servicio `FlotaUnidadesService`, utilidades, diálogos (`unidad-form-dialog`, `lectura-dialog`, `preventivo-dialog`), página de listado (ts, html, scss) y el `.ts` de la ficha de la unidad.
+
+### Falta de F1
+1. Ficha: crear `unidad-detail-page.html` y `.scss` (datos, alertas con `dynadrill-progress` y `statusOverride`, tablas de lecturas y preventivos, botones editar, lectura, preventivo y baja). Corregir en el `.ts`: usar `ActivatedRoute` (no está habilitado `withComponentInputBinding`, así que `input()` de `:id` no funciona) y quitar el alias `DynadrillTagColumns`.
+2. `flota.routes.ts` (`unidades` y `unidades/:id`, con `roleGuard`), entrada `dashboard/flota` en `app.routes.ts` y entrada de menú en `navigation.service.ts` (Jefe de Mantenimiento, Bodeguero, Jefe de Base, Superadmin); ajustar `navigation.service.spec.ts` si falla.
+3. `ng build` y `ng test` (con el bloqueo `.bloqueos/nx.lock`), prueba manual de la pantalla.
+4. Consultas a Dynadrill (sección `## Flota` en `documentacion/mantenimiento/CONSULTAS-PARA-DYNADRILL.md`): umbrales del viaje, quién mantiene proveedores, datos de matrícula de CAM-04/CAM-08 (no existen en `catalogos.vehiculo`, quedaron sin vínculo), responsable patrimonial de la carga inicial, transporte sin preventivo previo.
+5. **Commits locales**: ninguno hecho todavía. Como el árbol de trabajo es compartido, no se hizo `checkout`; propuesta: commit en `modulo/flota` solo con las rutas de Flota (índice temporal), en backend y frontend.
+
+### Tramos pendientes (no iniciados)
+- **F2** conductores y permisos con vigencias y alertas.
+- **F3** inspección de vehículos (caso por ticket desde `asignacion_realizada`, aprobación, eventos `flota.inspeccion_vehiculo.*` con `vehiculoId` y `unidadId`; retira el puente temporal de Pumping).
+- **F4** gerenciamiento de viaje y portal del Conductor (agregar al Gerente HSE a `gerenciamientoViajeApprove`; permiso `pumpingContextoConductor`).
+- **F5** migración de Pumping/FCR de `catalogos.vehiculo` a `flota.unidad` (D2), coordinada con la sesión de Pumping.
+
+### Decisiones que necesita del usuario
+- Confirmar el manejo de git (rama `modulo/flota` sin `checkout` en el árbol compartido).
+- Las consultas del punto 4 de arriba.

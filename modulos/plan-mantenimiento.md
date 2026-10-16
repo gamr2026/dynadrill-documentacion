@@ -1,7 +1,7 @@
 # Plan: Mantenimiento
 
 **Schema:** `mantenimiento` · **Contenedor:** operaciones (3103) · **Librería:** `libs/operaciones/mantenimiento` (`@dyn/mantenimiento`) · **Prefijo HTTP:** `/api/operaciones/mantenimiento`
-**Estado:** por construir · **Ola:** 1 (empieza cuando Flota tenga la tabla `unidad`; mientras tanto puede avanzar con el diseño y las órdenes)
+**Estado:** M1 backend hecho (ver sección 13) · **Ola:** 1 (empieza cuando Flota tenga la tabla `unidad`; mientras tanto puede avanzar con el diseño y las órdenes)
 **Lea antes:** `00-CONTEXTO-COMPARTIDO.md`, `01-REGLAS-DE-COORDINACION.md`, `02-CONTRATOS-ENTRE-MODULOS.md` (4.2 y 4.3), `03-DECISIONES-PENDIENTES.md` (D2, D14), `04-REVISION-CONTRA-DEMO-MAIN.md` (hallazgo 8) y `plan-flota.md`. **Revisado contra el `main` de la demo (08/10/2026).**
 
 ## 1. Objetivo
@@ -81,3 +81,35 @@ Mismos que Flota. **No** toque `libs/operaciones/flota` ni `libs/operaciones/pum
 ## 12. Preguntas abiertas entre módulos
 
 _(escriba aquí lo que necesite de Flota o de Pumping)_
+
+## 13. Estado de la construcción (actualizado 16/10/2026, sesión Mantenimiento)
+
+### Qué se quería
+Tramo **M1**: diseño y reportes recibidos + clasificación (descartar con motivo o generar orden con sub-órdenes), con el contrato 4.2 con Pumping, mientras Flota terminaba F1.
+
+### Qué se hizo (backend, completo y verificado)
+- Librería `libs/operaciones/mantenimiento` (`@dyn/mantenimiento`): schema Prisma con espejos de solo lectura de `flota.unidad`, `pumping.reporte_unidad`/`ticket` e `identidad`.
+- Migración `20261016200000_reportes_ordenes_y_subordenes` **aplicada**; semilla corrida e idempotente (`npm run db:seed:mantenimiento`): 3 tipos de sub-orden, 7 estados, 11 transiciones, contador de reportes.
+- Modelo normalizado: `reporte_recibido` (una referencia con FK por origen; QHSE sin FK por D1), `orden` (1 por reporte), `suborden`, catálogos `tipo_suborden`, `estado_suborden`, `transicion_suborden`, `contador`. El estado de la orden **se deriva** (no se guarda); los códigos de orden y sub-orden salen por JOIN (`R0001`, `R0001-M/I/O`).
+- Servicios: recepción idempotente del evento de llegada, descartar (motivo obligatorio, también en la base), clasificar, reclasificar (conserva las cerradas), listados, tipos y `GET unidades/:id/subordenes` (tarjeta del ticket). Eventos publicados: `operaciones.mantenimiento.reporte.recibido|descartado`, `orden.creada`, `suborden.asignada|derivada_a_pumping`.
+- Permisos: se reutilizan los seis `mantenimiento.*` existentes (sin cambios en `permissions.ts`).
+- Verificación: 26 pruebas verdes (integración con base real + unitarias del estado de la orden), `lint` y `build` de `operaciones` en verde. Contenedor `operaciones` reiniciado (3103) y ruteado por el gateway (responde 403 sin permisos, no 404).
+- Compartidos tocados (una línea cada uno): `package.json`, `tsconfig.base.json`, `apps/operaciones/src/app/app.module.ts`. Registrado en `REGISTRO-DE-CAMBIOS-COMPARTIDOS.md` junto con: pedido a Pumping del evento 4.2, riesgo de colas compartidas en RabbitMQ y nota de la primera migración de Prisma.
+- Consultas anotadas: `documentacion/mantenimiento/CONSULTAS-PARA-DYNADRILL.md` (sección `## Mantenimiento`, M-1 a M-6).
+
+### Qué se hizo del frontend (parcial, sin compilar)
+Solo en `dynadrill-frontend-platform/src/app/features/maintenance/reportes-nuevos/`: `models/mantenimiento-nuevo.ts` y `services/mantenimiento-nuevo.service.ts`. **No** se ha compilado ni probado.
+
+### Qué falta
+1. **Frontend M1**: página de reportes recibidos (filtros, Clasificar, Descartar con `MotivoDialog`), diálogo de clasificación (tipos, operador de mantenimiento vía `usuariosPorRol('operador_mantenimiento')`, derivación del operativo), pestaña de órdenes, ruta con `permissionGuard` en `maintenance.routes.ts`, entrada de menú en `navigation.service.ts` (Jefe de Mantenimiento, Superadmin, Jefe de Base), pruebas del modelo, y luego `ng test` y `ng build` (con bloqueo `nx.lock`).
+2. **Bloqueante externo**: Pumping debe publicar `operaciones.pumping.reporte_unidad_llegada` (hoy la bandeja solo se llena en pruebas); Flota debe enlazar cada vehículo del catálogo con su `flota.unidad`.
+3. **M2**: ejecución de sub-órdenes (guardar avance, enviar a revisión, aprobar/pedir corrección, derivar, reasignar), tabla `suborden_repuesto`, retorno a operación y cierre de la orden (esto escribe el historial correctivo).
+4. **M3**: historial de mantenimientos y preventivos usando el servicio exportado de Flota (ojo: Flota ya tiene `unidad_preventivo`; evitar duplicar) y lecturas de horómetro/km desde el reporte de llegada.
+5. **M4**: tarjeta «Mantenimientos» en el ticket de Pumping (coordinar con esa sesión), plantillas de avisos (`plantillas/mantenimiento.ts` + eventos en `eventos-con-aviso.consumer.ts`), permiso de lectura del ticket para mantenimiento, KPI y hojas imprimibles (DYN-MNT-RE-008, órdenes General y Operativa).
+6. Más adelante: columnas con FK para origen FCR y Vehículos (migraciones propias) y recepción del origen QHSE.
+7. **Git**: no se hizo ningún commit. Todo está sin confirmar en el árbol compartido (rama `desarrollo`); para respaldar en `modulo/mantenimiento` conviene confirmar solo estas rutas: `libs/operaciones/mantenimiento`, las tres líneas compartidas y los archivos de documentación/frontend citados.
+
+### Decisiones que necesito del usuario
+- **Colas de RabbitMQ compartidas** entre módulos del mismo contenedor (cambio en `libs/shared/messaging`): ¿lo autoriza la sesión principal?
+- Respuestas a M-1 a M-6 (en especial numeración de reportes y fórmulas de KPI).
+- Cómo respaldar el trabajo en git dado que todas las sesiones comparten un solo árbol de trabajo.
