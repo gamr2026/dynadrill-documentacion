@@ -1,0 +1,131 @@
+PASOS DEL PROCESO
+
+Facturación
+
+1. Apertura del servicio
+
+Momento en que el area de ventas registra en AS2 el pedido del cliente, se indica el servicio que se va a realizar, cual es el pozo y un valor estimado con un item para permitir la creación del trabajo en el sistema.
+pdta: en el sistema as2 se genera un pedido, el documento como tal se llama pedido, despues viene el ticket que para dynadrill es la prefactura.
+
+propuesta mia:(que un rol de ventas pueda registrar el pedido desde as2 o dyna-front y se refleje como pedido en el modulo de facturacion visible desde un rol de facturacion)
+
+Generacion de prefactura en el AS2, generaban archivo excel, se controlaban numeros, ese paso ya no existiria ya que se usaria el aplicativo. En este documento (secuencial tk control exp2025), en dicho documento tiene la numeracion de los tickets, tienen el mismo numero con el sistema, no se hace solo en el sistema porque el sistema solo le deja generar el numero de prefactura, la linea del servicio (pumping, fishing, ctu), la descripcion y de que pozo se trata.
+- la dueña de facturacion quiere mantener un control y por eso en el excel Tambien tiene:
+- vendedor a cargo
+- supervisor asignado al trabajo
+-representante en campo de mi cliente
+-representante en quito
+Esta info sirve para generar los documentos y remitirlos segun corresponde
+
+DF. Entiendo que el app se va a poder completar esta info, actualmente en as2 
+
+-El pedido es un requisito del sistema as2 para generar la prefactura/ticket
+- segun la imagen del formulario de creacion de prefactura, se debe contar con el listado de clientes, agentes comerciales (vendedores de dynadrill), el documento (linea de servicio:pumping, fcr, fishing, ctu)
+
+2. RECEPCION DE INFORMACION OPERATIVA
+
+ellos terminan el trabajo e ingresan a un excel (4303_PKSA-004 ticket REV2) pestaña TICKET
+el operador va llenando el reporte de prefactura de la mano con la pestaña de Reporte de htas, especificando que hicieron, indicando si estuvo el especialista, que dia se trabajo, que herramienta se uso, cuantas htas fueron. (analizar que significa O D V T en la pestaña de Reporte de Htas.) mas el llenado del Reporte diario de trabajo (pestaña Reporte Job) con esto el cliente tiene la idea que esto se realice pero en el aplicativo.
+Esta pestaña de ticket(formato de prefactura en el excel) tiene el formato con formulas para controlar las cantidades, series, precios segun lo que se dispone en el reporte de herramientas y lista de precios, nada sale inventado (lista de precios proviene de la pestaña LP)
+
+La pestaña Reporte Job es como una bitacora, esto lo hacen los sres de operaciones, se detalla el dia, la hora, la duracion.
+
+Lineas de servicio: pumping, fcr (ctu, pumping, fishing, completion). (averiguar si hay otra linea, segun dijo habian 4 lineas de servicio)
+
+La idea es que el operativo se detenga a llenar esto de manera diaria y al final se obtenga el llenado de estos documentos
+
+El reporte de htas no solo es para determinar la creacion de la prefactura segun lo que te comente anteriormente, sino Tambien que dicho reporte de las herramientas usadas y todo su detalle de como y cuando sirve para firmar dicho reporte y enviar al cliente en PDF. (Es un requisito del cliente petroecuador (cliente externo de dynadrill), no solamente se envia el ticket, sino Tambien el reporte job firmado, el reporte de htas firmado y la guia de remission el cliente no va a querer pagar y va a devolver el proceso (lo cual no es lo deseado).
+
+Una vez terminado el servicio ejecutado, facturacion recibe o dispone de :
+- ticket/prefactura, reportes diarios (reporte job), Reportes de htas, graficos y BHA (aplica dependiendo del servicio), reportes de openwells (estos se envian para la revision de la documentacion, este reporte lo emite un sistema que maneja petroecuador, es como un reporte job pero personalizado el cual facturacion lo suele usar para corrobar y comparar con el formato de reporte job que se llena en el excel por parte de los mismos operadores) y demas documentos aplicables.
+
+la de facturacion cree que seria buena idea que mediante una alerta donde diga JLuis le remitio este ticket50/prefactura y validar que este toda la informacion y que si esta listo le de paso a la siguiente fase.
+
+3. Revision de la prefactura
+
+se verifica como minimo:
+- datos grales del servicio, orden de trabajo, contrato aplicable, horas de servicio, transporte, totales, tarifas, cantidades, materiales utilizados, htas empleadas, correspondencia entre el ticket y la documentacion de respaldo, integridad de los archivos.
+en caso de inconsistencias: se deberia contar con opcion para devolver a la persona que creo o lleno el doc correspondiente. Pero si la persona se traslado a otro pozo deberia haber una opcion de que esa persona este pendiente de que se devolvio el documento y que esa documentacion se complete o corrija de forma correcta.
+
+4. Envio al cliente
+- se debe tener un pdf del reporte job, del reporte htas, un pdf del ticket. Esos se van a enviar al cliente para que los pueda revisar.
+- la guia de remission se hace luego de hacer los anteriores documentos. La guia de remission es un documento que se hace cuando se traslada mercaderia a nivel nacional.
+- la guia de remission participa solo en unidades no en servicios.
+- al momento que se elabora un ticket/prefactura, debe haber un campo que identifique si es material o si es servicio, porque luego cuando se emita la factura, petroecuador dice que incluyas la info de cuanto es servicio o material, porque ellos aplican retencion a la fuente y son % diferentes.
+- basicamente se envia la prefactura y todos los demas documentos de soporte firmados, aveces aplicara BHA, graficos, etc, dependera el tipo de servicio.
+
+5. Registro en AS2
+ - se actualiza el valor del pedido en AS2 segun los gastos reales obtenidos mediante la prefactura previamente ya verificada hasta por el cliente.
+- el registro se hace en AS2 luego del envio al cliente ya que si ya se guarda una informacion en el sistema y digamos que en la revision con el cliente veo que solo han trabajado 3 dias del operador y se le cobro originalmente 4 dias, el cliente va a mandar a cambiar y tocarìa hacer varias anulaciones en el sistema, por eso se decidio registrar en as2 solo luego de haberlo verificado con el cliente. Como al inicio se tuvo un pedido inicial ahora con esto se actualiza dicho pedido. El area de bodega Debera tener listo ya los despachos y materiales reales de lo que se haya utilizado.
+- El proceso de BOM es un proceso interno del sistema AS2 que depende del tipo de servicio (revisalo mediante un scrapeo a as2)
+- a la final lo que se hace es vincular el pedido ya aprobado con el despacho que hace la bodega, unimos esos 2 documentos y generamos la prefactura final (vease el formulario de as2 de creacion de prefactura que pide el documento de despachos)
+
+LISTA DE PRECIOS
+- el codigo de la lista de los precios viene del AS2.
+- se deberia poder contar con la lista de precios por cliente, la actual es de petroecuador. (ejem:lista de precios de petroecuador, lista de precios de guaina), incluso los codigos pueden ser diferentes (codigos, precios, descripcion, tipo).
+
+
+ADJUNTOS
+- imagen de formulario de creacion de prefactura
+- pdf de monica
+-
+
+El aplicativo deberia llegar hasta que el rol de facturacion pueda generar la prefactura y pueda enviar a firmar.
+Les gustaria tener un reporte donde se vea que fue el presupuesto cotizado por ventas y cual fue el valor real a cobrar en el trabajo ya de la prefactura generada.
+- si se pasa el presupuesto no pasa nada para el de facturacion ya que es el cliente quien autoriza la prefactura al ver todas los soportes adjuntos que le sirven de justificacion.
+
+
+
+
+REPORTES DEL APLICATIVO
+- obtener un reporte de ventas de los tickets con valores reales. Actualmente manejan un reporte que lo manejan en el excel, esa informacion la van construyendo, (secuencia TKcontrolexp) todos los campos de ese documento deberia proporcionar el sistema para generar dicho reporte con la informacion. incluido semaforo de demora de entrega de informacion (dentro de 2 a 3 dias de entrega de documentos como bueno)
+
+- en base a este excel se genera un reporte de ventas que se genera cada semana, en este esta toda la informacion de los valores de tickets terminados (ventas_dynadrill) y en base a esa pestaña de base de datos, se genera un resumen (pestaña summary) de como van las ventas.
+Reportes como tal: 
+1. Ventas & nro trabajos por mes (adjunto imagen)
+2. Ingresos divididos por POZO y linea de servicio (CTU, Pumping, fishing, completion) (adjunto imagen)
+3. Resumen de estado de tickets por cliente, estado en proceso de facturacion (adjunto imagen)
+4. Otro reporte (adjunto imagen)
+
+
+AOT: se emite solo cuando el ticket esta aprobado por el cliente, al final. En el contrato se establece que deberia ser al inicio para arrancar pero en la practica deberia ser al inicio, pero aveces varia y no es viable, por esa situacion se ha optado que al final de la firma del ticket, dynadrill genera la AOT con toda la info del encabezado que no puede cambiarse, lo que varia es el detalle de la prefactura. Otro campo variante de este documento es el No.: 848-OPR-PKSA-004-UIO-2026 (las marcadas en amarillo) se saca un numero secuencial que asocie el ticket con la AOT. Estructura del numero de la AOT = #[OT]-OPR-[CODIGODEPOZO,ejem:PKSA-004]-[codigo de ciudad, ejem:UIO]-[año actual, ejem:2026]
+- la fecha de la AOT debe ser un dia menos de la fecha de inicio indicada en la prefactura.
+-el campo de servicio de la AOT sale del campo servicio de la prefactura más /PKSA-004/RIG-30 (se concatena la nomenclatura del pozo + codigo del taladro que Tambien esta en la prefactura)
+- las firmas de la aot se hacen fisica.
+- El campo del representante se obtendra de la prefactura de quien fue la que solicito el servicio. con opcion a editar dicho representante. Con esto el documento se imprime y se hace firmar. Basicamente este documento se deberia una vez el ticket ya este aprobado por el cliente.
+- que en el reporte diario ellos puedan especificar mediante una lista desplegable el pozo donde se realizo la labor de operacion.
+- que el mismo dia que terminen el trabajo, el mismo dia los operadores ingresen al aplicativo y generen el job, report ehts, el ticket y se envie y arranque el proceso para la generacion del ticket. Esta prefactura va a ser aprobada por el cliente n dias despues.
+- aveces pasa que el cliente salio de descanso y toca esperar a que llegue para que pueda firmar la prefactura, entonces se tendria que saber cual fue la razon del retraso (ejem: el cliente se fue de vacaciones) ya que no por automatizar siempre el cliente va a firmar más rapido.
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

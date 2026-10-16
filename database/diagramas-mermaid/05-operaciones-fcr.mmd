@@ -1,0 +1,69 @@
+erDiagram
+    fcr_tickets {
+        uuid id PK
+        string code UK
+        string status
+        string current_phase
+        uuid pedido_id FK
+    }
+    fcr_tools {
+        uuid id PK
+        uuid ticket_id FK
+        uuid articulo_id FK
+        string status
+        string missing_reason
+    }
+    fcr_tool_usage_log {
+        uuid id PK
+        uuid tool_id FK
+        date fecha
+        string status
+    }
+    fcr_activity_log {
+        uuid id PK
+        uuid ticket_id FK
+        date fecha
+        string mensaje
+    }
+    fcr_observations {
+        uuid id PK
+        uuid ticket_id FK
+        string autor
+        string mensaje
+    }
+    fcr_phase_history {
+        uuid id PK
+        uuid ticket_id FK
+        string fase
+        uuid aprobado_por
+    }
+    fcr_tool_inspections {
+        uuid id PK
+        uuid ticket_id FK
+        uuid tool_id FK
+        uuid articulo_id FK
+        string estado
+    }
+    fcr_tool_inspection_partes {
+        uuid id PK
+        uuid inspection_id FK
+        uuid articulo_parte_id FK
+        string visual_resultado
+        string end_resultado
+    }
+    fcr_tool_inspection_firmas {
+        uuid id PK
+        uuid inspection_id FK
+        string rol
+        uuid usuario_id FK
+    }
+
+    fcr_tickets ||--o{ fcr_tools : ticket_id
+    fcr_tools ||--o{ fcr_tool_usage_log : tool_id
+    fcr_tickets ||--o{ fcr_activity_log : ticket_id
+    fcr_tickets ||--o{ fcr_observations : ticket_id
+    fcr_tickets ||--o{ fcr_phase_history : ticket_id
+    fcr_tickets ||--o{ fcr_tool_inspections : ticket_id
+    fcr_tools ||--|| fcr_tool_inspections : "1 por herramienta"
+    fcr_tool_inspections ||--o{ fcr_tool_inspection_partes : inspection_id
+    fcr_tool_inspections ||--o{ fcr_tool_inspection_firmas : inspection_id

@@ -1,0 +1,32 @@
+erDiagram
+    categorias_articulo {
+        uuid id PK
+        string code UK
+        string nombre
+        boolean activo
+    }
+    articulos {
+        uuid id PK
+        string codigo UK
+        uuid categoria_id FK
+        boolean activo
+    }
+    articulo_partes {
+        uuid id PK
+        uuid articulo_id FK
+        int orden
+        string codigo
+    }
+    movimientos_inventario {
+        uuid id PK
+        uuid articulo_id FK
+        string tipo
+        decimal cantidad
+        decimal saldo_resultante
+        string origen_modulo
+        uuid origen_referencia_id FK
+    }
+
+    categorias_articulo ||--o{ articulos : categoria_id
+    articulos ||--o{ articulo_partes : articulo_id
+    articulos ||--o{ movimientos_inventario : articulo_id

@@ -1,0 +1,92 @@
+erDiagram
+    pumping_tickets {
+        uuid id PK
+        string code UK
+        string status
+        string current_step
+        uuid pedido_id FK
+        uuid taladro_id FK
+    }
+    pumping_chemicals {
+        uuid id PK
+        uuid ticket_id FK
+        uuid articulo_id FK
+        decimal cantidad_asignada
+    }
+    pumping_tools {
+        uuid id PK
+        uuid ticket_id FK
+        string status
+    }
+    pumping_operators {
+        uuid id PK
+        uuid ticket_id FK
+        uuid usuario_id FK
+    }
+    pumping_unit_reports {
+        uuid id PK
+        uuid ticket_id FK
+        uuid unidad_id FK
+        uuid pozo_id FK
+        date departure_date
+    }
+    pumping_unit_report_checklist {
+        uuid id PK
+        uuid report_id FK
+        string categoria
+        string label
+    }
+    travel_managements {
+        uuid id PK
+        uuid ticket_id FK
+        string tipo
+        string risk_level
+    }
+    travel_risk_answers {
+        uuid id PK
+        uuid travel_id FK
+        int pregunta_codigo
+        int puntaje
+    }
+    daily_activity_reports {
+        uuid id PK
+        uuid ticket_id FK
+        uuid pozo_id FK
+        date fecha
+    }
+    daily_activity_entries {
+        uuid id PK
+        uuid report_id FK
+        string detalle
+    }
+    solicitudes_cambio_items {
+        uuid id PK
+        uuid pumping_ticket_id FK
+        uuid pedido_id FK
+        string estado
+    }
+    solicitud_cambio_item_original {
+        uuid id PK
+        uuid solicitud_id FK
+        string codigo
+        decimal cantidad
+    }
+    solicitud_cambio_item_propuesto {
+        uuid id PK
+        uuid solicitud_id FK
+        string codigo
+        decimal cantidad
+    }
+
+    pumping_tickets ||--o{ pumping_chemicals : ticket_id
+    pumping_tickets ||--o{ pumping_tools : ticket_id
+    pumping_tickets ||--o{ pumping_operators : ticket_id
+    pumping_tickets ||--o{ pumping_unit_reports : ticket_id
+    pumping_unit_reports ||--o{ pumping_unit_report_checklist : report_id
+    pumping_tickets ||--o{ travel_managements : ticket_id
+    travel_managements ||--o{ travel_risk_answers : travel_id
+    pumping_tickets ||--o{ daily_activity_reports : ticket_id
+    daily_activity_reports ||--o{ daily_activity_entries : report_id
+    pumping_tickets ||--o{ solicitudes_cambio_items : pumping_ticket_id
+    solicitudes_cambio_items ||--o{ solicitud_cambio_item_original : solicitud_id
+    solicitudes_cambio_items ||--o{ solicitud_cambio_item_propuesto : solicitud_id

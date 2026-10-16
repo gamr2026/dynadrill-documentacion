@@ -1,0 +1,58 @@
+erDiagram
+    bloques {
+        uuid id PK
+        string nombre UK
+    }
+    campos {
+        uuid id PK
+        string nombre UK
+        string codigo_pec
+        string zona
+    }
+    taladros {
+        uuid id PK
+        string nombre UK
+        boolean habilitado
+    }
+    pozos {
+        uuid id PK
+        string codigo UK
+        string nombre_completo
+        uuid campo_id FK
+        uuid bloque_id FK
+        boolean habilitado
+    }
+    clientes {
+        uuid id PK
+        string identificacion UK
+        string nombre_comercial
+        boolean activo
+    }
+    clientes_contratos {
+        uuid id PK
+        uuid cliente_id FK
+        string numero_contrato
+        boolean activo
+    }
+    contactos_cliente {
+        uuid id PK
+        uuid cliente_id FK
+        string tipo
+        string nombre
+        string cedula
+        boolean activo
+    }
+    personas {
+        uuid id PK
+        string tipo
+        uuid usuario_id FK
+        string nombre
+        string cedula UK
+        string empresa_externa
+        boolean activo
+    }
+
+    campos ||--o{ pozos : campo_id
+    bloques ||--o{ pozos : bloque_id
+    clientes ||--o{ clientes_contratos : cliente_id
+    clientes ||--o{ contactos_cliente : cliente_id

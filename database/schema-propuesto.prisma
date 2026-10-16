@@ -1,0 +1,2110 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Dynadrill — schema.prisma DEFINITIVO PROPUESTO (Etapa 2)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Este archivo es un ENTREGABLE DE DISEÑO, no parte del repo `dynadrill-backend`.
+// Vive en `documentacion/database/` junto con `ANALISIS-Y-PROPUESTA-BD.md`, que
+// contiene la justificación de cada decisión resumida acá (schemas, por qué no
+// hay @relation entre schemas, criterio de normalización, etc.) — no se repite
+// esa justificación en este archivo, solo el modelo de datos resultante.
+//
+// Para aplicarlo al proyecto real: copiar a `dynadrill-backend/prisma/schema.prisma`,
+// generar la migración inicial contra un PostgreSQL real (`prisma migrate dev
+// --name init`) y ejecutar `prisma/seed.ts` actualizado con los catálogos reales
+// (roles, bloques/campos/taladros/pozos, listas de precios) — no se hizo desde
+// esta sesión porque no hay PostgreSQL disponible en este entorno para probarlo
+// end-to-end; queda para quien lo aplique verificar que migra limpio.
+//
+// Decisiones ya confirmadas que este archivo aplica (ver ANALISIS-Y-PROPUESTA-BD.md):
+//   - PostgreSQL (no SQLite), un único clúster, un schema de Postgres por dominio/
+//     futuro microservicio (§3-4), sin FK física entre schemas (§3.3, §7).
+//   - UUID como PK de toda tabla (§9.2) — variante UUIDv7 recomendada, generada en
+//     aplicación (Node) al insertar; `@default(dbgenerated("gen_random_uuid()"))`
+//     abajo es solo un resguardo de base de datos (UUIDv4) si la app no provee un
+//     valor — la app SIEMPRE debe generar su propio UUIDv7 antes del insert.
+//   - Referencias cross-schema: columna `String @db.Uuid` plana, SIN `@relation`,
+//     documentada con comentario "-- ref. lógica a <schema>.<tabla>".
+//   - Servicios transversales confirmados: `documentos`, `notificaciones`, `workflow`
+//     (§6.9/§17.16) — sustituyen las tablas de adjuntos que existían repetidas por
+//     dominio en el backend actual (PedidoDocumento/FcrDocumento/PumpingDocumento).
+//   - `facturacion.pedidos.code` es la clave natural de AS2 (§17.10) — no un
+//     correlativo propio del Portal.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = [
+    "auth",
+    "maestros",
+    "integracion_as2",
+    "facturacion",
+    "operaciones_fcr",
+    "operaciones_pumping",
+    "mantenimiento",
+    "inventario",
+    "qhse",
+    "documentos",
+    "notificaciones",
+    "workflow"
+  ]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: auth
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Catálogo de roles de negocio (Supervisor, Operador, Jefe de Base...). Ya NO
+/// define directamente qué puede hacer un rol — eso vive en Permiso/RolPermiso.
+/// Un usuario puede tener más de un rol (ver UsuarioRol) — cobertura de
+/// vacaciones, doble función, etc., algo que el modelo anterior (1 rol por
+/// usuario) no podía representar sin forzar un rol combinado artificial.
+model Role {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String  @unique // estable, usado en guards — nunca cambia aunque `nombre` sí
+  nombre      String  @unique
+  descripcion String?
+  activo      Boolean @default(true)
+
+  usuarioRoles  UsuarioRol[]
+  rolPermisos   RolPermiso[]
+  workflowRoles WorkflowRolResponsable[]
+
+  @@map("roles")
+  @@schema("auth")
+}
+
+/// Catálogo granular de capacidades del sistema, independiente de cómo se
+/// llamen los roles — `code` sigue la convención `<modulo>.<recurso>.<accion>`
+/// (ej. 'facturacion.pedidos.crear', 'qhse.investigaciones.aprobar'). Editable
+/// sin desplegar código: agregar una capacidad nueva es una fila acá + una fila
+/// en rol_permisos, no un cambio de guard en el frontend.
+model Permiso {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String  @unique
+  modulo      String // 'facturacion' | 'operaciones_fcr' | 'qhse' | ...
+  recurso     String // 'pedidos' | 'investigaciones' | 'sub_orders' | ...
+  accion      String // 'ver' | 'crear' | 'editar' | 'aprobar' | 'eliminar' | ...
+  descripcion String?
+
+  rolPermisos RolPermiso[]
+
+  @@map("permisos")
+  @@schema("auth")
+}
+
+/// Qué puede hacer cada rol — tabla puente M:N Role↔Permiso.
+model RolPermiso {
+  rolId     String  @map("rol_id") @db.Uuid
+  rol       Role    @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permisoId String  @map("permiso_id") @db.Uuid
+  permiso   Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  @@id([rolId, permisoId])
+  @@index([permisoId])
+  @@map("rol_permisos")
+  @@schema("auth")
+}
+
+/// Qué rol(es) tiene cada persona — tabla puente M:N Usuario↔Role. Reemplaza
+/// el `usuarios.rol_id` único del diseño anterior (una persona, un solo rol),
+/// que no representa bien casos reales de doble función/cobertura.
+model UsuarioRol {
+  usuarioId   String   @map("usuario_id") @db.Uuid
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  rolId       String   @map("rol_id") @db.Uuid
+  rol         Role     @relation(fields: [rolId], references: [id])
+  asignadoAt  DateTime @default(now()) @map("asignado_at")
+  asignadoPor String?  @map("asignado_por") @db.Uuid // ref. lógica a auth.usuarios (quién lo asignó)
+
+  @@id([usuarioId, rolId])
+  @@index([rolId])
+  @@map("usuario_roles")
+  @@schema("auth")
+}
+
+model Usuario {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String  @unique
+  username     String  @unique
+  nombre       String
+  telefono     String?
+  passwordHash String  @map("password_hash")
+  estadoAcceso Boolean @default(true) @map("estado_acceso")
+  /// 'Mecánico' | 'Instrumental' — solo Operador de Mantenimiento.
+  especialidad String?
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  datosRrhh UsuarioDatosRrhh?
+  roles     UsuarioRol[]
+
+  @@map("usuarios")
+  @@schema("auth")
+}
+
+/// 1:1 con Usuario — separado porque `empleadoActivo` (situación laboral, dueño
+/// RRHH) y `estadoAcceso` de Usuario (login, dueño Sistemas) tienen ciclos de
+/// vida distintos, ya documentado así en el propio backend actual. Campos
+/// heredados tal cual del `User` real hoy en producción (origen: campos_empleado.xlsx).
+model UsuarioDatosRrhh {
+  usuarioId           String    @id @map("usuario_id") @db.Uuid
+  usuario             Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  cedula              String?
+  tipoIdentificacion  String?   @map("tipo_identificacion")
+  nacionalidad        String?
+  apellidos           String?
+  nombres             String?
+  cargo               String?
+  departamento        String?
+  area                String?
+  fechaIngreso        DateTime? @map("fecha_ingreso")
+  fechaSalida         DateTime? @map("fecha_salida")
+  causaSalidaEmpleado String?   @map("causa_salida_empleado")
+  tipoContrato        String?   @map("tipo_contrato")
+  sucursal            String?
+  tipoDiscapacidad    String?   @map("tipo_discapacidad")
+  cargasActivas       Int?      @map("cargas_activas")
+  categoria           String?
+  centroCosto         String?   @map("centro_costo")
+  empleadoActivo      Boolean?  @map("empleado_activo")
+
+  @@map("usuarios_datos_rrhh")
+  @@schema("auth")
+}
+
+/// Reemplaza los mapas hardcodeados FCR_PHASE_ROLE/PUMPING_STEP_ROLE del
+/// frontend por datos consultables y editables sin desplegar código.
+model WorkflowRolResponsable {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dominio     String // 'operaciones_fcr' | 'operaciones_pumping' | ...
+  pasoOFase   String @map("paso_o_fase")
+  rolId       String @map("rol_id") @db.Uuid
+  rol         Role   @relation(fields: [rolId], references: [id])
+
+  @@unique([dominio, pasoOFase])
+  @@map("workflow_rol_responsable")
+  @@schema("auth")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: maestros
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Bloque {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre String @unique
+
+  pozos Pozo[]
+
+  @@map("bloques")
+  @@schema("maestros")
+}
+
+model Campo {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre    String  @unique
+  /// Código de activo Petroecuador (AIT/AM/AP...).
+  codigoPec String? @map("codigo_pec")
+  /// Región comercial (ZONA OESTE/ESTE/NORTE/LITORAL/MACHALA...).
+  zona      String?
+
+  pozos Pozo[]
+
+  @@map("campos")
+  @@schema("maestros")
+}
+
+model Taladro {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre         String  @unique
+  rigContractual String? @map("rig_contractual")
+  habilitado     Boolean @default(true)
+
+  @@map("taladros")
+  @@schema("maestros")
+}
+
+model Pozo {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo         String  @unique
+  nombreCompleto String  @map("nombre_completo")
+  campoId        String  @map("campo_id") @db.Uuid
+  campo          Campo   @relation(fields: [campoId], references: [id])
+  bloqueId       String  @map("bloque_id") @db.Uuid
+  bloque         Bloque  @relation(fields: [bloqueId], references: [id])
+  habilitado     Boolean @default(true)
+
+  @@index([campoId])
+  @@index([bloqueId])
+  @@map("pozos")
+  @@schema("maestros")
+}
+
+model Cliente {
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipoIdentificacion String  @map("tipo_identificacion")
+  identificacion     String  @unique
+  nombreComercial    String  @map("nombre_comercial")
+  nombreFiscal       String? @map("nombre_fiscal")
+  activo             Boolean @default(true)
+
+  contratos ClienteContrato[]
+  contactos ContactoCliente[]
+
+  @@map("clientes")
+  @@schema("maestros")
+}
+
+model ClienteContrato {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clienteId      String    @map("cliente_id") @db.Uuid
+  cliente        Cliente   @relation(fields: [clienteId], references: [id])
+  numeroContrato String    @map("numero_contrato")
+  vigenteDesde   DateTime  @map("vigente_desde")
+  vigenteHasta   DateTime? @map("vigente_hasta")
+  activo         Boolean   @default(true)
+
+  @@unique([clienteId, numeroContrato])
+  @@map("clientes_contratos")
+  @@schema("maestros")
+}
+
+/// ✅ Revisado (2026-09-18): el diseño anterior mezclaba en una sola tabla dos
+/// cosas distintas — personal de Dynadrill (agente_comercial, analista_facturacion,
+/// que YA existen como filas en auth.usuarios) y contactos del propio CLIENTE
+/// (representante_campo/quito, que no tienen ni deberían tener cuenta de acceso
+/// al sistema). Duplicar al personal interno acá violaba la regla de "no
+/// dupliques información que no necesita duplicarse" — ahora las referencias a
+/// personal Dynadrill (`Pedido.agenteComercialId`/`analistaFacturacionId`)
+/// apuntan directo a `auth.usuarios` (ref. lógica), y esta tabla queda
+/// exclusivamente para contactos EXTERNOS, ligados a un cliente concreto.
+model ContactoCliente {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clienteId String  @map("cliente_id") @db.Uuid
+  cliente   Cliente @relation(fields: [clienteId], references: [id])
+  /// 'representante_campo' | 'representante_quito' — Company Man y homólogo en Quito.
+  tipo      String
+  nombre    String
+  /// Búsqueda del Company Man por cédula, a pedido del cliente.
+  cedula    String?
+  activo    Boolean @default(true)
+
+  @@unique([clienteId, tipo, nombre])
+  @@index([clienteId, tipo])
+  @@map("contactos_cliente")
+  @@schema("maestros")
+}
+
+/// ✅ Nuevo (generaliza el patrón interno/externo que antes se resolvía solo
+/// para `mantenimiento.conductores`, §17.12): catálogo compartido de personas
+/// físicas que NO son necesariamente usuarios del sistema — conductores,
+/// trabajadores lesionados, testigos, receptores de EPI, personal de
+/// contratistas. Un usuario de `auth.usuarios` puede o no tener una fila
+/// espejo acá (`usuario_id`); una persona externa (tercero/contratista) SOLO
+/// existe acá. Evita repetir la pareja "tipo interno/externo + cedula + empresa"
+/// en cada dominio que necesite identificar a alguien que no es necesariamente
+/// staff de Dynadrill (Mantenimiento para conductores, QHSE para heridos/EPI/testigos).
+model Persona {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipo           String // 'interno' | 'externo'
+  usuarioId      String? @unique @map("usuario_id") @db.Uuid // ref. lógica a auth.usuarios — solo si tipo='interno'
+  nombre         String
+  cedula         String  @unique
+  empresaExterna String? @map("empresa_externa") // solo si tipo='externo'
+  telefono       String?
+  activo         Boolean @default(true)
+
+  @@map("personas")
+  @@schema("maestros")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: integracion_as2
+// ─────────────────────────────────────────────────────────────────────────────
+
+model As2PedidoPendiente {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payload   String // JSON del pedido tal como llega de AS2, hasta bajarlo al Portal
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("as2_pedidos_pendientes")
+  @@schema("integracion_as2")
+}
+
+model As2SyncLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidad     String // 'pedido' | 'prefactura' | 'guia_remision' | ...
+  entidadCode String   @map("entidad_code") // clave natural AS2 (§17.10)
+  direccion   String // 'as2_a_portal' | 'portal_a_as2'
+  exitoso     Boolean
+  detalle     String? // mensaje de error o payload recibido
+  fecha       DateTime @default(now())
+
+  @@index([entidad, entidadCode])
+  @@map("as2_sync_log")
+  @@schema("integracion_as2")
+}
+
+model As2Secuencia {
+  /// Nombre de la secuencia tal como la posee AS2: 'pedido' | 'prefactura' | 'factura' | 'guia_remision'.
+  nombre        String   @id
+  ultimoValor   String   @map("ultimo_valor")
+  actualizadoAt DateTime @updatedAt @map("actualizado_at")
+
+  @@map("as2_secuencias")
+  @@schema("integracion_as2")
+}
+
+/// ✅ Nuevo (2026-09-18): condición de pago, forma de pago, canal y bodega son
+/// catálogos que POSEE AS2 (módulo Comercial/Ventas e Inventario/Bodega, según
+/// el propio análisis §1) — dejarlos como texto libre en `facturacion.pedidos`
+/// (como quedaron en la primera versión de este schema) repite el mismo error
+/// que ya se corrigió para `cliente`: texto libre sin catálogo real detrás
+/// termina en datos que no matchean entre sí. Se modelan como espejos
+/// sincronizados de solo lectura desde AS2, igual que `clientes`/`clientes_contratos`.
+model As2CondicionPago {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo String  @unique // código tal como lo expone AS2
+  nombre String
+  activo Boolean @default(true)
+
+  @@map("as2_condiciones_pago")
+  @@schema("integracion_as2")
+}
+
+model As2FormaPago {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo String  @unique
+  nombre String
+  activo Boolean @default(true)
+
+  @@map("as2_formas_pago")
+  @@schema("integracion_as2")
+}
+
+model As2Canal {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo String  @unique
+  nombre String
+  activo Boolean @default(true)
+
+  @@map("as2_canales")
+  @@schema("integracion_as2")
+}
+
+model As2Zona {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo String  @unique
+  nombre String
+  activo Boolean @default(true)
+
+  @@map("as2_zonas")
+  @@schema("integracion_as2")
+}
+
+model As2Bodega {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo String  @unique
+  nombre String
+  activo Boolean @default(true)
+
+  @@map("as2_bodegas")
+  @@schema("integracion_as2")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: facturacion
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Pedido {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// ✅ Clave natural (§17.10): el MISMO número de pedido que asigna AS2, nunca
+  /// un correlativo propio del Portal — incluso para pedidos creados primero acá.
+  code   String @unique
+
+  origen       String // 'as2' | 'portal'
+  as2Ref       String?   @map("as2_ref")
+  lastSyncedAt DateTime? @map("last_synced_at")
+
+  // Cliente — referencia lógica a maestros.clientes (§7), NOT NULL (resuelve
+  // inconsistencia histórica del bug de "prefactura en $0" por matching de texto).
+  clienteId           String  @map("cliente_id") @db.Uuid
+  clienteNombreSnapshot String @map("cliente_nombre_snapshot") // inmutable, ver §6.3
+  clienteRucSnapshot   String? @map("cliente_ruc_snapshot")
+  contratoId           String? @map("contrato_id") @db.Uuid // ref. lógica a maestros.clientes_contratos
+
+  lineaServicio String  @map("linea_servicio") // 'fishing'|'pumping'|'completion'|'ctu' — 4 fijas (§17.9)
+  tipoServicio  String? @map("tipo_servicio")
+  tipoOt        String  @default("venta") @map("tipo_ot") // 'venta' | 'servicio'
+
+  pozoId String @map("pozo_id") @db.Uuid // ref. lógica a maestros.pozos
+
+  // ✅ Personal Dynadrill (agente comercial, analista, técnico HSE) → SIEMPRE
+  // auth.usuarios (ref. lógica), nunca duplicado en un catálogo aparte.
+  agenteComercialId       String? @map("agente_comercial_id") @db.Uuid
+  analistaFacturacionId   String? @map("analista_facturacion_id") @db.Uuid
+  tecnicoHseResponsableId String  @map("tecnico_hse_responsable_id") @db.Uuid
+  // Contactos del CLIENTE → maestros.contactos_cliente (ref. lógica, distinta
+  // tabla porque no son usuarios del sistema, ver nota en ContactoCliente).
+  representanteCampoId String? @map("representante_campo_id") @db.Uuid
+  representanteQuitoId String? @map("representante_quito_id") @db.Uuid
+
+  // ✅ Catálogos que POSEE AS2 → integracion_as2.* (ref. lógica), no texto libre.
+  condicionPagoId String? @map("condicion_pago_id") @db.Uuid
+  zonaId          String? @map("zona_id") @db.Uuid
+  bodegaId        String? @map("bodega_id") @db.Uuid
+  solicitudMedio  String? @map("solicitud_medio") // 'verbal' | 'escrita' — no es catálogo AS2, se queda como CHECK
+
+  fechaInicioServicio DateTime? @map("fecha_inicio_servicio")
+  fechaFinServicio    DateTime? @map("fecha_fin_servicio")
+
+  /// El ciclo local se detiene en 'aot_generada' (§17.8) — los estados
+  /// posteriores (control de costos, facturado) viven solo en AS2/SRI.
+  estado String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by") @db.Uuid // ref. lógica a auth.usuarios
+
+  itemsEstimado    PedidoItemEstimado[]
+  historialEstado  PedidoHistorialEstado[]
+  documentosOper   DocumentoOperativo[]
+  prefacturas      Prefactura[]
+  guiasRemision    GuiaRemision[]
+  aots             Aot[]
+
+  @@index([estado, fechaInicioServicio])
+  @@index([clienteId])
+  @@index([pozoId])
+  @@map("pedidos")
+  @@schema("facturacion")
+}
+
+model PedidoItemEstimado {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedidoId            String  @map("pedido_id") @db.Uuid
+  pedido              Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  codigo              String
+  descripcion         String
+  unidad              String
+  cantidad            Decimal @db.Decimal(14, 2)
+  valorUnitario       Decimal @map("valor_unitario") @db.Decimal(14, 2)
+  descuentoPorcentaje Decimal? @map("descuento_porcentaje") @db.Decimal(5, 2)
+  esQuimico           Boolean @default(false) @map("es_quimico")
+
+  @@index([pedidoId])
+  @@map("pedido_items_estimado")
+  @@schema("facturacion")
+}
+
+/// Append-only — sin UPDATE/DELETE a nivel de permisos de aplicación.
+model PedidoHistorialEstado {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedidoId  String   @map("pedido_id") @db.Uuid
+  pedido    Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  estado    String
+  fecha     DateTime @default(now())
+  usuarioId String   @map("usuario_id") @db.Uuid // ref. lógica a auth.usuarios
+  motivo    String?
+
+  @@index([pedidoId, fecha])
+  @@map("pedido_historial_estado")
+  @@schema("facturacion")
+}
+
+model ListaPrecios {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clienteId      String   @map("cliente_id") @db.Uuid // ref. lógica a maestros.clientes, NOT NULL
+  contratoId     String?  @map("contrato_id") @db.Uuid // ref. lógica a maestros.clientes_contratos
+  vigenteDesde   DateTime @map("vigente_desde")
+  activa         Boolean  @default(true)
+
+  items ListaPreciosItem[]
+
+  @@index([clienteId])
+  @@map("listas_precios")
+  @@schema("facturacion")
+}
+
+model ListaPreciosItem {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listaPreciosId String       @map("lista_precios_id") @db.Uuid
+  listaPrecios   ListaPrecios @relation(fields: [listaPreciosId], references: [id], onDelete: Cascade)
+  codigo         String
+  descripcion    String
+  unidad         String
+  precio         Decimal      @db.Decimal(14, 2)
+  tipo           String // 'Material' | 'Servicio'
+
+  @@unique([listaPreciosId, codigo])
+  @@map("lista_precios_items")
+  @@schema("facturacion")
+}
+
+model DocumentoOperativo {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedidoId           String    @map("pedido_id") @db.Uuid
+  pedido             Pedido    @relation(fields: [pedidoId], references: [id])
+  origen             String // 'fcr' | 'pumping'
+  ticketOperativoId  String    @map("ticket_operativo_id") @db.Uuid // ref. lógica según `origen`
+  tipo               String // 'reporte_job' | 'reporte_herramientas'
+  fecha              DateTime?
+  estado             String    @default("borrador") // 'borrador' | 'firmado' | 'recibido'
+  firmadoPor         String?   @map("firmado_por") @db.Uuid
+  firmadoAt          DateTime? @map("firmado_at")
+  recibidoAt         DateTime? @map("recibido_at")
+
+  actividades       DocumentoOperativoActividad[]
+  usoHerramientas   DocumentoOperativoUsoHerramienta[]
+
+  @@index([pedidoId])
+  @@map("documentos_operativos")
+  @@schema("facturacion")
+}
+
+model DocumentoOperativoActividad {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentoId    String             @map("documento_id") @db.Uuid
+  documento      DocumentoOperativo @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  fecha          DateTime
+  horaInicio     String             @map("hora_inicio")
+  horaFin        String             @map("hora_fin")
+  detalle        String
+  autor          String
+
+  @@index([documentoId])
+  @@map("documento_operativo_actividades")
+  @@schema("facturacion")
+}
+
+model DocumentoOperativoUsoHerramienta {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentoId    String             @map("documento_id") @db.Uuid
+  documento      DocumentoOperativo @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  herramientaRef String             @map("herramienta_ref")
+  fecha          DateTime
+  /// 'operacion' | 'stand_by' | 'daily_charge' | 'venta' (O/S/D/V del formato DYN-FCR-RE-008)
+  status         String
+
+  @@unique([documentoId, herramientaRef, fecha]) // upsert semántico, ya documentado así
+  @@map("documento_operativo_uso_herramientas")
+  @@schema("facturacion")
+}
+
+model Prefactura {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code               String   @unique
+  pedidoId           String   @map("pedido_id") @db.Uuid // SIN @unique (§17.13 — histórico permitido)
+  pedido             Pedido   @relation(fields: [pedidoId], references: [id])
+  subtotalServicios  Decimal  @map("subtotal_servicios") @db.Decimal(14, 2)
+  subtotalMateriales Decimal  @map("subtotal_materiales") @db.Decimal(14, 2)
+  subtotal           Decimal  @db.Decimal(14, 2)
+  iva                Decimal  @db.Decimal(14, 2) // 15%
+  retencionIr        Decimal  @map("retencion_ir") @db.Decimal(14, 2) // 1%
+  retencionIva       Decimal  @map("retencion_iva") @db.Decimal(14, 2) // 30% del IVA
+  netoCobrar         Decimal  @map("neto_cobrar") @db.Decimal(14, 2)
+  estado             String // borrador→en_revision→generada→enviada_para_firmas→firmada|rechazada
+  generadoPor        String?  @map("generado_por") @db.Uuid
+  fechaGeneracion    DateTime @default(now()) @map("fecha_generacion")
+  advertencia        String? // por qué dio $0 / líneas sin match en lista de precios
+
+  items         PrefacturaItem[]
+  guiasRemision GuiaRemision[]
+  aots          Aot[]
+
+  @@index([pedidoId, estado])
+  @@map("prefacturas")
+  @@schema("facturacion")
+}
+
+model PrefacturaItem {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prefacturaId   String     @map("prefactura_id") @db.Uuid
+  prefactura     Prefactura @relation(fields: [prefacturaId], references: [id], onDelete: Cascade)
+  codigo         String
+  descripcion    String
+  unidad         String
+  serie          String?
+  cantidad       Decimal    @db.Decimal(14, 2)
+  precioUnitario Decimal    @map("precio_unitario") @db.Decimal(14, 2)
+  precioTotal    Decimal    @map("precio_total") @db.Decimal(14, 2)
+  tipo           String // 'Material' | 'Servicio'
+  fuente         String // 'htas' | 'material' | 'personal' | 'cambio_alcance'
+
+  @@index([prefacturaId])
+  @@map("prefactura_items")
+  @@schema("facturacion")
+}
+
+model GuiaRemision {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedidoId            String      @map("pedido_id") @db.Uuid
+  pedido              Pedido      @relation(fields: [pedidoId], references: [id])
+  prefacturaId        String?     @map("prefactura_id") @db.Uuid
+  prefactura          Prefactura? @relation(fields: [prefacturaId], references: [id])
+  fecha               DateTime
+  clienteRucSnapshot  String?     @map("cliente_ruc_snapshot")
+  solicitadoPor       String?     @map("solicitado_por")
+  despachadoPor       String?     @map("despachado_por")
+  lugarOrigen         String      @map("lugar_origen")
+  horaSalida          String?     @map("hora_salida")
+  horaLlegada         String?     @map("hora_llegada")
+  guiaRemisionAs2Ref  String?     @map("guia_remision_as2_ref") // nº SRI real cuando AS2 la emite
+
+  items GuiaRemisionItem[]
+
+  @@index([pedidoId])
+  @@map("guias_remision")
+  @@schema("facturacion")
+}
+
+model GuiaRemisionItem {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  guiaId         String       @map("guia_id") @db.Uuid
+  guia           GuiaRemision @relation(fields: [guiaId], references: [id], onDelete: Cascade)
+  codigo         String
+  descripcion    String
+  unidad         String
+  cantidad       Decimal      @db.Decimal(14, 2)
+
+  @@index([guiaId])
+  @@map("guia_remision_items")
+  @@schema("facturacion")
+}
+
+model Aot {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedidoId     String      @map("pedido_id") @db.Uuid
+  pedido       Pedido      @relation(fields: [pedidoId], references: [id])
+  prefacturaId String      @map("prefactura_id") @db.Uuid
+  prefactura   Prefactura  @relation(fields: [prefacturaId], references: [id])
+  numeroOt     String      @unique @map("numero_ot")
+  numeroOpr    String      @map("numero_opr") // [OT]-OPR-[POZO]-[CIUDAD]-[AÑO]
+  fecha        DateTime // = fechaInicioServicio - 1 día
+  estado       String      @default("generada") // 'generada' | 'firmada'
+  firmadaPor   String?     @map("firmada_por")
+  firmadaAt    DateTime?   @map("firmada_at")
+
+  items AotItem[]
+
+  @@index([pedidoId])
+  @@map("aots")
+  @@schema("facturacion")
+}
+
+model AotItem {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aotId       String  @map("aot_id") @db.Uuid
+  aot         Aot     @relation(fields: [aotId], references: [id], onDelete: Cascade)
+  descripcion String
+  valor       Decimal @db.Decimal(14, 2)
+
+  @@index([aotId])
+  @@map("aot_items")
+  @@schema("facturacion")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: operaciones_fcr
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FcrTicket {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String  @unique
+  status         String
+  currentPhase   String  @map("current_phase")
+  tipoOt         String  @map("tipo_ot")
+  proposalVersion Int    @default(1) @map("proposal_version")
+  pedidoId       String? @unique @map("pedido_id") @db.Uuid // ref. lógica a facturacion.pedidos
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tools            FcrTool[]
+  activityLog      FcrActivityLog[]
+  observations     FcrObservation[]
+  phaseHistory     FcrPhaseHistory[]
+  toolInspections  FcrToolInspection[]
+
+  @@index([currentPhase, status])
+  @@map("fcr_tickets")
+  @@schema("operaciones_fcr")
+}
+
+model FcrTool {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId          String    @map("ticket_id") @db.Uuid
+  ticket            FcrTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  articuloId        String?   @map("articulo_id") @db.Uuid // ref. lógica a inventario.articulos
+  nombre            String
+  status            String // 'seleccionada'|'en_preparacion'|'recibida'|'devuelta'|'faltante'
+  missingReason     String?   @map("missing_reason") // 'venta_complementaria'|'perdida'|'dano'|'otro'
+  addedLate         Boolean   @default(false) @map("added_late")
+  sentToBodega      Boolean   @default(false) @map("sent_to_bodega") // irreversible una vez true
+  sentToSupervisor  Boolean   @default(false) @map("sent_to_supervisor")
+
+  usageLog    FcrToolUsageLog[]
+  inspection  FcrToolInspection?
+
+  @@index([ticketId])
+  @@map("fcr_tools")
+  @@schema("operaciones_fcr")
+}
+
+model FcrToolUsageLog {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  toolId            String   @map("tool_id") @db.Uuid
+  tool              FcrTool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  fecha             DateTime
+  status            String // 'operacion'|'stand_by'|'daily_charge'|'venta'
+  tipoCompletacion  String?  @map("tipo_completacion")
+  tipoTrabajo       String?  @map("tipo_trabajo")
+  tipoPicker        String?  @map("tipo_picker")
+  presion           Decimal? @db.Decimal(10, 2)
+  peso              Decimal? @db.Decimal(10, 2)
+  observacion       String?
+
+  @@unique([toolId, fecha])
+  @@map("fcr_tool_usage_log")
+  @@schema("operaciones_fcr")
+}
+
+model FcrActivityLog {
+  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId String    @map("ticket_id") @db.Uuid
+  ticket   FcrTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fecha    DateTime
+  autor    String
+  mensaje  String
+
+  @@index([ticketId, fecha])
+  @@map("fcr_activity_log")
+  @@schema("operaciones_fcr")
+}
+
+model FcrObservation {
+  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId String    @map("ticket_id") @db.Uuid
+  ticket   FcrTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  autor    String
+  rol      String
+  fecha    DateTime
+  mensaje  String
+
+  @@index([ticketId, fecha])
+  @@map("fcr_observations")
+  @@schema("operaciones_fcr")
+}
+
+/// Append-only, inmutable una vez firmada la fase.
+model FcrPhaseHistory {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId         String    @map("ticket_id") @db.Uuid
+  ticket           FcrTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fase             String
+  aprobadoPor      String    @map("aprobado_por") @db.Uuid
+  aprobadoPorRol   String    @map("aprobado_por_rol")
+  fecha            DateTime  @default(now())
+
+  @@index([ticketId, fecha])
+  @@map("fcr_phase_history")
+  @@schema("operaciones_fcr")
+}
+
+model FcrToolInspection {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId               String    @map("ticket_id") @db.Uuid
+  ticket                 FcrTicket @relation(fields: [ticketId], references: [id])
+  toolId                 String    @unique @map("tool_id") @db.Uuid
+  tool                   FcrTool   @relation(fields: [toolId], references: [id])
+  articuloId             String?   @map("articulo_id") @db.Uuid // ref. lógica a inventario.articulos
+  cliente                String    @default("")
+  pozo                   String    @default("")
+  fechaInspeccion        DateTime? @map("fecha_inspeccion")
+  fechaReparacion        DateTime? @map("fecha_reparacion")
+  fechaEnvio             DateTime? @map("fecha_envio")
+  descripcionHerramienta String    @default("") @map("descripcion_herramienta")
+  numeroSerie            String    @default("") @map("numero_serie")
+  inspeccionadoPor       String    @default("") @map("inspeccionado_por") // 'dynadrill'|'proveedor_externo'
+  reparadoPor            String    @default("") @map("reparado_por")
+  estado                 String    @default("borrador") // 'borrador'|'enviado'|'aprobado'|'rechazado'
+
+  partes FcrToolInspectionParte[]
+  firmas FcrToolInspectionFirma[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([ticketId])
+  @@map("fcr_tool_inspections")
+  @@schema("operaciones_fcr")
+}
+
+/// Copia deliberada (no join) de ArticuloParte al iniciar el checklist —
+/// inmutable frente a cambios posteriores del BOM maestro (trazabilidad, §11.2).
+model FcrToolInspectionParte {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inspectionId      String            @map("inspection_id") @db.Uuid
+  inspection        FcrToolInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  articuloParteId   String?           @map("articulo_parte_id") @db.Uuid // ref. lógica, informativa
+  orden             Int
+  item              String
+  codigo            String
+  descripcion       String
+  cantidadEsperada  Int               @default(1) @map("cantidad_esperada")
+  visualResultado   String            @default("") @map("visual_resultado") // 'ok'|'defectuoso'|''
+  endResultado      String            @default("") @map("end_resultado")
+  cambioCantidad    Int?              @map("cambio_cantidad") // informativo, no dispara kardex
+  accion            String            @default("")
+
+  @@index([inspectionId])
+  @@map("fcr_tool_inspection_partes")
+  @@schema("operaciones_fcr")
+}
+
+model FcrToolInspectionFirma {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inspectionId String            @map("inspection_id") @db.Uuid
+  inspection   FcrToolInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  rol          String // 'reparado_por' | 'revisado_por' | 'liberado_qhse' — cadena con predecesor obligatorio
+  usuarioId    String            @map("usuario_id") @db.Uuid
+  fecha        DateTime          @default(now())
+
+  @@unique([inspectionId, rol])
+  @@map("fcr_tool_inspection_firmas")
+  @@schema("operaciones_fcr")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: operaciones_pumping
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PumpingTicket {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String  @unique
+  status         String
+  serviceType    String  @map("service_type") // 5 sub-valores (§17.7, distinto de "línea de servicio")
+  proposalOrigin String? @map("proposal_origin")
+  currentStep    String  @default("revision_propuesta") @map("current_step")
+  pedidoId       String? @unique @map("pedido_id") @db.Uuid // ref. lógica a facturacion.pedidos
+  numeroContrato String? @map("numero_contrato")
+  taladroId      String? @map("taladro_id") @db.Uuid // ref. lógica a maestros.taladros
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  chemicals  PumpingChemical[]
+  tools      PumpingTool[]
+  operators  PumpingOperator[]
+  unitReports PumpingUnitReport[]
+  travels    TravelManagement[]
+  dailyReports DailyActivityReport[]
+  solicitudesCambio SolicitudCambioItems[]
+
+  @@index([currentStep, status])
+  @@map("pumping_tickets")
+  @@schema("operaciones_pumping")
+}
+
+model PumpingChemical {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId            String        @map("ticket_id") @db.Uuid
+  ticket              PumpingTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  articuloId          String        @map("articulo_id") @db.Uuid // ref. lógica a inventario.articulos
+  nombre              String
+  cantidadAsignada    Decimal       @map("cantidad_asignada") @db.Decimal(14, 2)
+  cantidadUsada       Decimal       @default(0) @map("cantidad_usada") @db.Decimal(14, 2)
+  cantidadDevuelta    Decimal       @default(0) @map("cantidad_devuelta") @db.Decimal(14, 2)
+  unidad              String
+  consumoRegistrado   Boolean       @default(false) @map("consumo_registrado")
+
+  @@index([ticketId])
+  @@map("pumping_chemicals")
+  @@schema("operaciones_pumping")
+}
+
+model PumpingTool {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId   String        @map("ticket_id") @db.Uuid
+  ticket     PumpingTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  nombre     String
+  serialCode String        @map("serial_code")
+  status     String // 'seleccionada' | 'instalada' | 'devuelta'
+
+  @@index([ticketId])
+  @@map("pumping_tools")
+  @@schema("operaciones_pumping")
+}
+
+model PumpingOperator {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId  String        @map("ticket_id") @db.Uuid
+  ticket    PumpingTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  usuarioId String?       @map("usuario_id") @db.Uuid // ref. lógica a auth.usuarios
+  nombre    String
+  rol       String
+  unitCode  String        @map("unit_code")
+
+  @@index([ticketId])
+  @@map("pumping_operators")
+  @@schema("operaciones_pumping")
+}
+
+model PumpingUnitReport {
+  id                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId                  String        @map("ticket_id") @db.Uuid
+  ticket                    PumpingTicket @relation(fields: [ticketId], references: [id])
+  unidadId                  String?       @map("unidad_id") @db.Uuid // ref. lógica a mantenimiento.unidades
+  reportCode                String        @map("report_code")
+  pozoId                    String        @map("pozo_id") @db.Uuid // ref. lógica a maestros.pozos
+  baseName                  String        @map("base_name")
+  blockName                 String        @map("block_name")
+  headerCode                String        @map("header_code")
+  clientName                String        @map("client_name")
+  departureDate              DateTime      @map("departure_date")
+  arrivalDate                 DateTime?     @map("arrival_date")
+  fuelDeparture              Decimal?      @map("fuel_departure") @db.Decimal(10, 2)
+  fuelArrival                 Decimal?      @map("fuel_arrival") @db.Decimal(10, 2)
+  unitReady                  Boolean?      @map("unit_ready")
+  operationInterrupted       Boolean       @default(false) @map("operation_interrupted")
+  interruptionDetail         String?       @map("interruption_detail")
+  departureOperatorName      String        @map("departure_operator_name")
+  departureApprovalDate      DateTime?     @map("departure_approval_date")
+  arrivalOperatorName        String?       @map("arrival_operator_name")
+  arrivalApprovalDate        DateTime?     @map("arrival_approval_date")
+
+  checklist PumpingUnitReportChecklist[]
+
+  @@index([unidadId, arrivalDate])
+  @@map("pumping_unit_reports")
+  @@schema("operaciones_pumping")
+}
+
+model PumpingUnitReportChecklist {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId  String            @map("report_id") @db.Uuid
+  report    PumpingUnitReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  categoria String // 'chassis' | 'motor' | 'arrival_equipment' | 'instrumentation'
+  label     String
+  salida    String? // 'ok' | 'x' | null
+  llegada   String?
+
+  @@index([reportId])
+  @@map("pumping_unit_report_checklist")
+  @@schema("operaciones_pumping")
+}
+
+model TravelManagement {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId           String?        @map("ticket_id") @db.Uuid
+  ticket             PumpingTicket? @relation(fields: [ticketId], references: [id])
+  tipo               String // 'ida' | 'regreso'
+  fecha              DateTime
+  motivoViaje        String         @map("motivo_viaje")
+  lineaServicio      String         @map("linea_servicio")
+  origen             String
+  destino            String
+  vehicleType        String         @map("vehicle_type") // 'Liviano' | 'Pesado'
+  totalPoints        Int            @map("total_points")
+  riskLevel          String         @map("risk_level") // 'BAJO' | 'MEDIO' | 'ALTO'
+  approverName       String         @map("approver_name")
+  approverSignature  String?        @map("approver_signature")
+  conductorSignature String?        @map("conductor_signature")
+
+  riskAnswers TravelRiskAnswer[]
+
+  @@index([ticketId])
+  @@map("travel_managements")
+  @@schema("operaciones_pumping")
+}
+
+model TravelRiskAnswer {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  travelId         String           @map("travel_id") @db.Uuid
+  travel           TravelManagement @relation(fields: [travelId], references: [id], onDelete: Cascade)
+  preguntaCodigo   Int              @map("pregunta_codigo") // 1-12
+  respuesta        String
+  puntaje          Int
+
+  @@unique([travelId, preguntaCodigo])
+  @@map("travel_risk_answers")
+  @@schema("operaciones_pumping")
+}
+
+model DailyActivityReport {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId              String?        @map("ticket_id") @db.Uuid
+  ticket                PumpingTicket? @relation(fields: [ticketId], references: [id])
+  fecha                 DateTime
+  cliente               String
+  ordenContrato         String         @map("orden_contrato")
+  pozoId                String         @map("pozo_id") @db.Uuid // ref. lógica a maestros.pozos
+  representanteCliente  String         @map("representante_cliente")
+  tiempoProductivo      Decimal?       @map("tiempo_productivo") @db.Decimal(6, 2)
+  tiempoNoProductivo    Decimal?       @map("tiempo_no_productivo") @db.Decimal(6, 2)
+  firmaSupervisor       String?        @map("firma_supervisor")
+  firmaCliente          String?        @map("firma_cliente")
+
+  entradas DailyActivityEntry[]
+
+  @@index([ticketId, fecha])
+  @@map("daily_activity_reports")
+  @@schema("operaciones_pumping")
+}
+
+model DailyActivityEntry {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId   String              @map("report_id") @db.Uuid
+  report     DailyActivityReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  horaInicio String              @map("hora_inicio")
+  horaFin    String              @map("hora_fin")
+  detalle    String
+
+  @@index([reportId])
+  @@map("daily_activity_entries")
+  @@schema("operaciones_pumping")
+}
+
+model SolicitudCambioItems {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pumpingTicketId String        @map("pumping_ticket_id") @db.Uuid
+  pumpingTicket   PumpingTicket @relation(fields: [pumpingTicketId], references: [id])
+  pedidoId        String        @map("pedido_id") @db.Uuid // ref. lógica a facturacion.pedidos
+  estado          String        @default("pendiente") // 'pendiente' | 'aprobada' | 'rechazada'
+  motivo          String
+  solicitadoPor   String        @map("solicitado_por") @db.Uuid
+  fechaSolicitud  DateTime      @default(now()) @map("fecha_solicitud")
+  revisadoPor     String?       @map("revisado_por") @db.Uuid
+  fechaRevision   DateTime?     @map("fecha_revision")
+  motivoRechazo   String?       @map("motivo_rechazo")
+
+  itemsOriginales SolicitudCambioItemOriginal[]
+  itemsPropuestos SolicitudCambioItemPropuesto[]
+
+  @@index([pumpingTicketId])
+  @@index([pedidoId])
+  @@map("solicitudes_cambio_items")
+  @@schema("operaciones_pumping")
+}
+
+model SolicitudCambioItemOriginal {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  solicitudId  String                @map("solicitud_id") @db.Uuid
+  solicitud    SolicitudCambioItems  @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  codigo       String
+  descripcion  String
+  unidad       String
+  cantidad     Decimal               @db.Decimal(14, 2)
+  valorUnitario Decimal              @map("valor_unitario") @db.Decimal(14, 2)
+
+  @@map("solicitud_cambio_item_original")
+  @@schema("operaciones_pumping")
+}
+
+model SolicitudCambioItemPropuesto {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  solicitudId  String                @map("solicitud_id") @db.Uuid
+  solicitud    SolicitudCambioItems  @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  codigo       String
+  descripcion  String
+  unidad       String
+  cantidad     Decimal               @db.Decimal(14, 2)
+  valorUnitario Decimal              @map("valor_unitario") @db.Decimal(14, 2)
+
+  @@map("solicitud_cambio_item_propuesto")
+  @@schema("operaciones_pumping")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: mantenimiento
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ✅ Revisado (2026-09-18): la primera versión fusionaba en una sola tabla
+/// datos "patrimoniales" (placa, matrícula, póliza — dueño real: Administración,
+/// se editan pocas veces al año) con datos de "control operativo" (horómetro/km
+/// — dueño real: Mantenimiento/Supervisores, se actualizan en cada reporte).
+/// Mismo criterio que ya se aplicó a auth.usuarios/usuarios_datos_rrhh: ciclos
+/// de vida y dueños distintos → tablas 1:1 separadas, no una tabla con 20
+/// columnas nullable donde la mitad no aplica según el `tipo` de unidad.
+model Unidad {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code   String  @unique
+  nombre String
+  tipo   String // 'Servicio' | 'Auxiliar' | 'Transporte'
+  activo Boolean @default(true)
+
+  patrimonio             UnidadPatrimonio?
+  controlOperativo       UnidadControlOperativo?
+  registrosPreventivos   UnidadRegistroPreventivo[]
+  unitReports            UnitReport[]
+  vehicleInspections     VehicleInspection[]
+  registrosMantenimiento RegistroMantenimiento[]
+  maintenanceOrders      MaintenanceOrder[]
+
+  @@index([tipo])
+  @@map("unidades")
+  @@schema("mantenimiento")
+}
+
+/// 1:1 con Unidad — datos administrativos/legales del activo. Editados por
+/// Administración, no por Mantenimiento en el día a día.
+model UnidadPatrimonio {
+  unidadId                 String    @id @map("unidad_id") @db.Uuid
+  unidad                   Unidad    @relation(fields: [unidadId], references: [id], onDelete: Cascade)
+  placa                    String?
+  marca                    String?
+  modelo                   String?
+  anio                     Int?
+  fechaMatricula           DateTime? @map("fecha_matricula")
+  caducidadMatricula       DateTime? @map("caducidad_matricula")
+  caducidadPoliza          DateTime? @map("caducidad_poliza")
+  vigenciaOtroDocumento    DateTime? @map("vigencia_otro_documento")
+  responsablePatrimonialId String?   @map("responsable_patrimonial_id") @db.Uuid // ref. lógica a auth.usuarios
+  predeterminado           Boolean   @default(false)
+  notaInventario           String?   @map("nota_inventario")
+
+  @@map("unidad_patrimonio")
+  @@schema("mantenimiento")
+}
+
+/// 1:1 con Unidad — el "odómetro" de la unidad, cualquiera sea su tipo.
+/// Solo se rellenan las columnas relevantes al `tipo` de la Unidad
+/// (horas para Servicio, km para Transporte, solo fecha para Auxiliar) —
+/// se mantiene en una sola tabla porque las tres variantes comparten el mismo
+/// propósito (saber cuándo toca el próximo mantenimiento) y dueño (Mantenimiento).
+model UnidadControlOperativo {
+  unidadId                    String    @id @map("unidad_id") @db.Uuid
+  unidad                      Unidad    @relation(fields: [unidadId], references: [id], onDelete: Cascade)
+  // Servicio (control por horas)
+  horometroActual             Decimal?  @map("horometro_actual") @db.Decimal(10, 2)
+  fechaUltimoMantenimiento    DateTime? @map("fecha_ultimo_mantenimiento")
+  // Transporte (control por km)
+  kmActual                    Decimal?  @map("km_actual") @db.Decimal(10, 2)
+  kmUltimoMantenimiento       Decimal?  @map("km_ultimo_mantenimiento") @db.Decimal(10, 2)
+  fechaUltimoMantenimientoKm  DateTime? @map("fecha_ultimo_mantenimiento_km")
+  categoriaPeso               String?   @map("categoria_peso") // 'Pesado' | 'Liviano'
+  // Auxiliar (control semestral)
+  fechaUltimoMantenimientoAux DateTime? @map("fecha_ultimo_mantenimiento_aux")
+  proveedorMantenimiento      String?   @map("proveedor_mantenimiento") // vacío = interno
+
+  @@map("unidad_control_operativo")
+  @@schema("mantenimiento")
+}
+
+model UnidadRegistroPreventivo {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  unidadId      String   @map("unidad_id") @db.Uuid
+  unidad        Unidad   @relation(fields: [unidadId], references: [id], onDelete: Cascade)
+  tipoServicio  String   @map("tipo_servicio") // 'A' (250h±30h) | 'B' (2000h±50h) — §17.5
+  ultimoEnHoras Decimal  @map("ultimo_en_horas") @db.Decimal(10, 2)
+  ultimaFecha   DateTime @map("ultima_fecha")
+
+  @@unique([unidadId, tipoServicio])
+  @@map("unidad_registros_preventivos")
+  @@schema("mantenimiento")
+}
+
+model MaintenanceOrder {
+  id                   String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String      @unique
+  /// ✅ Corregido (2026-09-18): esto vive en el MISMO schema que `unidades` —
+  /// no hay ninguna razón para que sea una referencia lógica (quedó así por
+  /// arrastre de la primera versión); es FK física real, como corresponde
+  /// dentro de un mismo microservicio (§3.3).
+  unidadId             String      @map("unidad_id") @db.Uuid
+  unidad               Unidad      @relation(fields: [unidadId], references: [id])
+  unitReportId         String      @map("unit_report_id") @db.Uuid
+  unitReport           UnitReport  @relation(fields: [unitReportId], references: [id])
+  origin               String?
+  sourceModule         String      @map("source_module") // 'Pumping' | 'FCR' | 'Vehiculos' | 'QHSE'
+  returnedToOperation  Boolean     @default(false) @map("returned_to_operation")
+  finalUnitState       String?     @map("final_unit_state") // 'Disponible' | 'Con restricciones'
+  finalObservaciones   String?     @map("final_observaciones")
+  finalResponsableId   String?     @map("final_responsable_id") @db.Uuid
+  closedAt             DateTime?   @map("closed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  subOrders SubOrder[]
+
+  // NOTA: el "estado" de esta orden NO se guarda — se calcula desde el estado
+  // de sus SubOrder + returnedToOperation (ver §11.3, computeOrderStatus()).
+
+  @@index([unidadId])
+  @@map("maintenance_orders")
+  @@schema("mantenimiento")
+}
+
+model SubOrder {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId              String           @map("order_id") @db.Uuid
+  order                MaintenanceOrder @relation(fields: [orderId], references: [id])
+  code                 String           @unique
+  type                 String // 'Mecanico' | 'Instrumental' | 'Operativo'
+  assignedUserId       String?          @map("assigned_user_id") @db.Uuid // ref. lógica a auth.usuarios
+  assignedById         String?          @map("assigned_by_id") @db.Uuid
+  status               String // Pendiente→En Diagnóstico→En Ejecución→En Revisión de Cierre→Cerrado (+ desvíos)
+  diagnostico          String?
+  actividadesCorrectivas String?        @map("actividades_correctivas")
+  horasTrabajo         Decimal?         @map("horas_trabajo") @db.Decimal(10, 2)
+  correctionNote       String?          @map("correction_note")
+  trabajosAdicionales  String?          @map("trabajos_adicionales")
+  ejecucionIniciadaEn  DateTime?        @map("ejecucion_iniciada_en")
+  ejecucionTerminadaEn DateTime?        @map("ejecucion_terminada_en")
+  cierreAprobadoEn     DateTime?        @map("cierre_aprobado_en")
+  deriveNote           String?          @map("derive_note") // solo tipo Operativo
+
+  repuestos SubOrderRepuesto[]
+
+  @@index([orderId])
+  @@index([status, assignedUserId])
+  @@map("sub_orders")
+  @@schema("mantenimiento")
+}
+
+model SubOrderRepuesto {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subOrderId   String   @map("sub_order_id") @db.Uuid
+  subOrder     SubOrder @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  numeroParte  String   @map("numero_parte")
+  cantidad     Int
+  descripcion  String
+
+  @@map("sub_order_repuestos")
+  @@schema("mantenimiento")
+}
+
+model UnitReport {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportNo                    String    @unique @map("report_no")
+  sourceModule                String    @map("source_module")
+  unidadId                    String    @map("unidad_id") @db.Uuid
+  unidad                      Unidad    @relation(fields: [unidadId], references: [id])
+  originVehicleInspectionId   String?   @map("origin_vehicle_inspection_id") @db.Uuid
+  originTicketId              String?   @map("origin_ticket_id") @db.Uuid // ref. lógica (Pumping/FCR)
+  originInspeccionHseId       String?   @map("origin_inspeccion_hse_id") @db.Uuid // ref. lógica a qhse
+  pozoId                      String    @map("pozo_id") @db.Uuid
+  bloqueId                    String?   @map("bloque_id") @db.Uuid
+  clienteId                   String?   @map("cliente_id") @db.Uuid
+  base                        String
+  fechaSalida                 DateTime  @map("fecha_salida")
+  fechaLlegada                DateTime? @map("fecha_llegada")
+  horometroSalida              Decimal?  @map("horometro_salida") @db.Decimal(10, 2)
+  horometroLlegada             Decimal?  @map("horometro_llegada") @db.Decimal(10, 2)
+  odometroSalida               Decimal?  @map("odometro_salida") @db.Decimal(10, 2)
+  odometroLlegada              Decimal?  @map("odometro_llegada") @db.Decimal(10, 2)
+  problemasMecanica            String?   @map("problemas_mecanica")
+  problemasInstrumentacion     String?   @map("problemas_instrumentacion")
+  problemasOperaciones         String?   @map("problemas_operaciones")
+  interrumpioOperacion         Boolean   @default(false) @map("interrumpio_operacion")
+  detalleInterrupcion          String?   @map("detalle_interrupcion")
+  listaParaSiguienteOperacion  Boolean   @default(false) @map("lista_para_siguiente_operacion")
+  dismissed                    Boolean   @default(false)
+  dismissReason                String?   @map("dismiss_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  checklist         UnitReportChecklist[]
+  maintenanceOrders MaintenanceOrder[]
+  vehicleInspection  VehicleInspection?
+
+  @@index([unidadId, fechaLlegada])
+  @@map("unit_reports")
+  @@schema("mantenimiento")
+}
+
+model UnitReportChecklist {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId  String     @map("report_id") @db.Uuid
+  report    UnitReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  categoria String // 'chasis_plataforma' | 'instrumentacion' | 'operativo'
+  label     String
+  salida    String?
+  llegada   String?
+
+  @@index([reportId])
+  @@map("unit_report_checklist")
+  @@schema("mantenimiento")
+}
+
+model VehicleInspection {
+  id                            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  unidadId                      String      @map("unidad_id") @db.Uuid
+  unidad                        Unidad      @relation(fields: [unidadId], references: [id])
+  ticketId                      String?     @map("ticket_id") @db.Uuid // ref. lógica, crítico para no heredar de otro ticket
+  fecha                         DateTime
+  puntoPartida                  String      @map("punto_partida")
+  destino                       String
+  inspeccionadoPorId            String      @map("inspeccionado_por_id") @db.Uuid
+  unitReportId                  String?     @unique @map("unit_report_id") @db.Uuid
+  unitReport                    UnitReport? @relation(fields: [unitReportId], references: [id])
+  kmInicial                     Decimal     @map("km_inicial") @db.Decimal(10, 2)
+  kmFinal                       Decimal?    @map("km_final") @db.Decimal(10, 2)
+  proximoMantenimiento          DateTime?   @map("proximo_mantenimiento")
+  licenciaVigente                Boolean     @map("licencia_vigente")
+  manejoDefensivoVigente         Boolean     @map("manejo_defensivo_vigente")
+  examenMedicoVigente            Boolean     @map("examen_medico_vigente")
+  examenPsicosensometrico        Boolean     @map("examen_psicosensometrico")
+  documentosClientes             Boolean     @map("documentos_clientes")
+  vacunasCertificado             Boolean     @map("vacunas_certificado")
+  reuneCondicionesParaTrabajar   Boolean     @map("reune_condiciones_para_trabajar")
+  supervisorApprovedBy           String?     @map("supervisor_approved_by") @db.Uuid
+  supervisorApprovedAt           DateTime?   @map("supervisor_approved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  checklist VehicleInspectionChecklist[]
+
+  // NOTA: vehicleInspectionBlockedBySeatbelt() — si el ítem "Cinturones de
+  // seguridad" del checklist = NC, el vehículo no puede usarse aunque el
+  // resto esté aprobado. Regla de negocio dura (§6.6) — se aplica en servicio,
+  // no como constraint de BD (depende del contenido de una fila de checklist).
+
+  @@index([unidadId])
+  @@map("vehicle_inspections")
+  @@schema("mantenimiento")
+}
+
+model VehicleInspectionChecklist {
+  id           String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inspectionId String             @map("inspection_id") @db.Uuid
+  inspection   VehicleInspection  @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  categoria    String // 'vehiculo' | 'equipo'
+  label        String
+  estado       String? // 'C' | 'NC' | 'NA' | null
+
+  @@index([inspectionId])
+  @@map("vehicle_inspection_checklist")
+  @@schema("mantenimiento")
+}
+
+/// ✅ Revisado (2026-09-18): el "interno/externo + cédula + empresa" de un
+/// conductor es exactamente el mismo problema que resolver "quién es esta
+/// persona" para un herido en una emergencia QHSE, un testigo, o un receptor
+/// de EPI — se generalizó a `maestros.Persona` (ref. lógica cross-schema,
+/// misma tabla reusada por todos los dominios) en vez de duplicar la pareja
+/// interno/externo aquí. Esta tabla queda SOLO con lo específico de conducir:
+/// las vigencias de documentos habilitantes.
+model ConductorPermiso {
+  id                                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  personaId                          String    @unique @map("persona_id") @db.Uuid // ref. lógica a maestros.personas
+  licenciaNumero                     String?   @map("licencia_numero")
+  licenciaVencimiento                DateTime? @map("licencia_vencimiento")
+  manejoDefensivoVencimiento         DateTime? @map("manejo_defensivo_vencimiento")
+  examenMedicoVencimiento            DateTime? @map("examen_medico_vencimiento")
+  examenPsicosensometricoVencimiento DateTime? @map("examen_psicosensometrico_vencimiento")
+  documentosClientesVencimiento      DateTime? @map("documentos_clientes_vencimiento")
+  vacunasVencimiento                 DateTime? @map("vacunas_vencimiento")
+
+  @@map("conductor_permisos")
+  @@schema("mantenimiento")
+}
+
+model RegistroMantenimiento {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  unidadId                 String    @map("unidad_id") @db.Uuid
+  unidad                   Unidad    @relation(fields: [unidadId], references: [id])
+  clase                    String // 'Preventivo' | 'Correctivo'
+  tipoServicio             String?   @map("tipo_servicio") // 'A' | 'B' — solo Preventivo+Servicio
+  fecha                    DateTime
+  horometro                Decimal?  @db.Decimal(10, 2)
+  km                       Decimal?  @db.Decimal(10, 2)
+  responsableId            String    @map("responsable_id") @db.Uuid
+  ejecutadoPor             String    @map("ejecutado_por") // 'Interno' | 'Tercero'
+  proveedor                String?
+  observaciones            String?
+  ordenId                  String?   @map("orden_id") @db.Uuid
+  checklistFabricanteArchivo String? @map("checklist_fabricante_archivo") // solo Interno — hoy metadata; considerar migrar a `documentos`
+
+  @@index([unidadId, fecha])
+  @@map("registros_mantenimiento")
+  @@schema("mantenimiento")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: inventario
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ✅ Revisado (2026-09-18): `categoria` dejó de ser texto libre. El valor
+/// 'HERRAMIENTAS' es un "magic string" que hoy dispara lógica de negocio real
+/// (si aplica BOM/partes, control de retorno FCR) — dejarlo como texto libre
+/// sin catálogo detrás es frágil (un typo rompe la regla silenciosamente).
+/// Se promueve a catálogo real; `subcategoria` se deja como texto libre
+/// porque no dispara ninguna regla de negocio conocida, solo es descriptiva.
+model CategoriaArticulo {
+  id     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code   String  @unique // 'HERRAMIENTAS' | 'QUIMICOS' | 'REPUESTOS' | 'EPP' | ... — confirmar catálogo completo con negocio
+  nombre String
+  activo Boolean @default(true)
+
+  articulos Articulo[]
+
+  @@map("categorias_articulo")
+  @@schema("inventario")
+}
+
+model Articulo {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo               String            @unique
+  codigoAlterno        String?           @map("codigo_alterno")
+  codigoComercial      String?           @map("codigo_comercial")
+  codigoBarras         String?           @map("codigo_barras")
+  nombre               String
+  nombreComercial      String?           @map("nombre_comercial")
+  categoriaId          String            @map("categoria_id") @db.Uuid
+  categoria            CategoriaArticulo @relation(fields: [categoriaId], references: [id])
+  subcategoria         String
+  unidadStock          String            @map("unidad_stock")
+  nota                 String?
+  informacionAdicional String?           @map("informacion_adicional")
+  activo               Boolean           @default(true)
+  // stockActual: NO se guarda — se calcula desde movimientos_inventario (§11.3)
+
+  partes      ArticuloParte[]
+  movimientos MovimientoInventario[]
+
+  @@index([categoriaId])
+  @@map("articulos")
+  @@schema("inventario")
+}
+
+model ArticuloParte {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articuloId       String   @map("articulo_id") @db.Uuid
+  articulo         Articulo @relation(fields: [articuloId], references: [id], onDelete: Cascade)
+  orden            Int
+  item             String
+  codigo           String
+  descripcion      String
+  cantidadEsperada Int      @default(1) @map("cantidad_esperada")
+
+  @@unique([articuloId, orden])
+  @@map("articulo_partes")
+  @@schema("inventario")
+}
+
+model MovimientoInventario {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articuloId           String    @map("articulo_id") @db.Uuid
+  articulo             Articulo  @relation(fields: [articuloId], references: [id])
+  tipo                 String // 'entrada' | 'salida'
+  cantidad             Decimal   @db.Decimal(14, 2)
+  fecha                DateTime?
+  motivo               String
+  responsableId        String    @map("responsable_id") @db.Uuid
+  saldoResultante      Decimal   @map("saldo_resultante") @db.Decimal(14, 2) // snapshot, kardex (§11.2)
+  origenModulo         String?   @map("origen_modulo") // 'fcr' | 'pumping' | 'mantenimiento' | 'manual'
+  origenReferenciaId   String?   @map("origen_referencia_id") @db.Uuid // ref. lógica
+
+  @@index([articuloId, fecha])
+  @@map("movimientos_inventario")
+  @@schema("inventario")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: qhse
+// ─────────────────────────────────────────────────────────────────────────────
+
+model IpercMatrix {
+  id                             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                           String    @unique
+  estado                         String // borrador→en_evaluacion→en_revision→aprobada|rechazada
+  origenOperativoTipo            String?   @map("origen_operativo_tipo") // 'pumping' | 'fcr'
+  origenTicketId                 String?   @map("origen_ticket_id") @db.Uuid // ref. lógica
+  origenPedidoId                 String?   @map("origen_pedido_id") @db.Uuid // ref. lógica
+  leccionAprendidaPendiente      Boolean   @default(false) @map("leccion_aprendida_pendiente")
+  leccionAprendidaTexto          String?   @map("leccion_aprendida_texto")
+  leccionAprendidaInvestigacionId String?  @map("leccion_aprendida_investigacion_id") @db.Uuid
+
+  tasks IpercTask[]
+  ptws  PtwMatrix[]
+
+  @@index([estado])
+  @@map("iperc_matrices")
+  @@schema("qhse")
+}
+
+model IpercTask {
+  id       String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matrixId String      @map("matrix_id") @db.Uuid
+  matrix   IpercMatrix @relation(fields: [matrixId], references: [id], onDelete: Cascade)
+  orden    Int
+  nombre   String
+
+  hazards IpercHazard[]
+
+  @@map("iperc_tasks")
+  @@schema("qhse")
+}
+
+/// Evaluación GTC-45: NP=ND×NE, NR=NP×NC. Constantes oficiales fuera de BD
+/// (ND:{0,2,6,10}, NE:{1,2,3,4}, NC:{10,25,60,100}) — el cálculo vive en servicio.
+model IpercHazard {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId                      String    @map("task_id") @db.Uuid
+  task                        IpercTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  clasificacion               String
+  fuente                      String
+  controlesExistentesMedio    String    @map("controles_existentes_medio")
+  controlesExistentesIndividuo String   @map("controles_existentes_individuo")
+  generadoEn                  String    @map("generado_en")
+  efectosPosibles             String    @map("efectos_posibles")
+  numeroExpuestos             Int       @map("numero_expuestos")
+  peorConsecuencia            String    @map("peor_consecuencia")
+  requisitoLegal              String?   @map("requisito_legal")
+  seguimiento                 String?
+  riesgoInicialNd              Int       @map("riesgo_inicial_nd")
+  riesgoInicialNe              Int       @map("riesgo_inicial_ne")
+  riesgoInicialNc              Int       @map("riesgo_inicial_nc")
+  riesgoResidualNd             Int?      @map("riesgo_residual_nd")
+  riesgoResidualNe             Int?      @map("riesgo_residual_ne")
+  riesgoResidualNc             Int?      @map("riesgo_residual_nc")
+
+  controles IpercControl[]
+
+  @@index([taskId])
+  @@map("iperc_hazards")
+  @@schema("qhse")
+}
+
+model IpercControl {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hazardId    String      @map("hazard_id") @db.Uuid
+  hazard      IpercHazard @relation(fields: [hazardId], references: [id], onDelete: Cascade)
+  tipo        String // 'eliminacion'|'sustitucion'|'ingenieria'|'administrativo'|'epp'
+  descripcion String
+
+  @@map("iperc_controles")
+  @@schema("qhse")
+}
+
+model PtwMatrix {
+  id                       String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                     String      @unique
+  ipercMatrixId            String      @map("iperc_matrix_id") @db.Uuid // FK FÍSICA — mismo schema (§6.8)
+  ipercMatrix              IpercMatrix @relation(fields: [ipercMatrixId], references: [id])
+  fase                     String // gabinete→ingreso→verificaciones→formalizacion→ejecucion→gestion_documental
+  ticketTipo               String?     @map("ticket_tipo")
+  ticketId                 String?     @map("ticket_id") @db.Uuid // ref. lógica
+  pedidoId                 String?     @map("pedido_id") @db.Uuid // ref. lógica
+  ptwFirmadoSitio           Boolean     @default(false) @map("ptw_firmado_sitio")
+  actaRecibimientoFirmada   Boolean     @default(false) @map("acta_recibimiento_firmada")
+  ptwCerrado                Boolean     @default(false) @map("ptw_cerrado")
+  actaDevolucionFirmada     Boolean     @default(false) @map("acta_devolucion_firmada")
+  respaldosEnviados         Boolean     @default(false) @map("respaldos_enviados")
+
+  gasReadings PtwGasReading[]
+  dailyLogs   PtwDailyLog[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([fase, ipercMatrixId])
+  @@map("ptw_matrices")
+  @@schema("qhse")
+}
+
+model PtwGasReading {
+  id     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ptwId  String    @map("ptw_id") @db.Uuid
+  ptw    PtwMatrix @relation(fields: [ptwId], references: [id], onDelete: Cascade)
+  fecha  DateTime
+  h2s    Decimal   @db.Decimal(6, 2) // límite ≤10ppm
+  lel    Decimal   @db.Decimal(6, 2) // límite ≤10%
+  o2     Decimal   @db.Decimal(6, 2) // rango 19.5-23.5%
+  co     Decimal   @db.Decimal(6, 2) // límite ≤25ppm
+
+  @@index([ptwId, fecha])
+  @@map("ptw_gas_readings")
+  @@schema("qhse")
+}
+
+model PtwDailyLog {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ptwId           String    @map("ptw_id") @db.Uuid
+  ptw             PtwMatrix @relation(fields: [ptwId], references: [id], onDelete: Cascade)
+  fecha           DateTime
+  toolboxTalk     Boolean   @map("toolbox_talk")
+  lotoVerificado  Boolean   @map("loto_verificado")
+  observaciones   String?
+
+  @@index([ptwId, fecha])
+  @@map("ptw_daily_logs")
+  @@schema("qhse")
+}
+
+model StopCard {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String   @unique
+  observadorId   String   @map("observador_id") @db.Uuid // ref. lógica — normalizado para % participación (§16.1)
+  fecha          DateTime
+  locacion       String
+  operadora      String?
+
+  items StopCardItem[]
+
+  @@map("stop_cards")
+  @@schema("qhse")
+}
+
+model StopCardItem {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cardId       String   @map("card_id") @db.Uuid
+  card         StopCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  bloque       String // 'acciones' | 'condiciones'
+  subcategoria String
+  item         String
+  estado       String? // 'seguro' | 'inseguro' | null
+
+  @@index([cardId])
+  @@map("stop_card_items")
+  @@schema("qhse")
+}
+
+model SwaEvento {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estado          String // 'activo' | 'evaluado' | 'cerrado'
+  tipoPeligro     String            @map("tipo_peligro")
+  activadoAt      DateTime          @map("activado_at")
+  ticketTipo      String?           @map("ticket_tipo")
+  ticketId        String?           @map("ticket_id") @db.Uuid // ref. lógica — mientras abierto, bloquea el ticket
+  emergenciaId    String?           @map("emergencia_id") @db.Uuid
+  emergencia      EmergenciaEvento? @relation("SwaEscalaEmergencia", fields: [emergenciaId], references: [id])
+  heroeSeguridad  Boolean           @default(false) @map("heroe_seguridad")
+
+  notificaciones SwaNotificacion[]
+
+  @@index([estado])
+  @@map("swa_eventos")
+  @@schema("qhse")
+}
+
+model SwaNotificacion {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  swaId         String    @map("swa_id") @db.Uuid
+  swa           SwaEvento @relation(fields: [swaId], references: [id], onDelete: Cascade)
+  /// ✅ Revisado: antes texto libre ('Supervisor'|'Coordinador HSE'|'Gerente HSE')
+  /// — mismo antipatrón de comparar roles por string ya corregido en auth (§6.1).
+  /// Ahora referencia el `code` estable de auth.roles.
+  rolNotificadoId String    @map("rol_notificado_id") @db.Uuid // ref. lógica a auth.roles
+  notificadoAt    DateTime? @map("notificado_at")
+
+  @@map("swa_notificaciones")
+  @@schema("qhse")
+}
+
+model DerrameEvento {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estado            String // 'activo' | 'contenido' | 'cerrado'
+  volumen           String // 'menor'(<1bbl) | 'moderado'(1-10bbl) | 'mayor'(>10bbl) — §17.6
+  ubicacion         String // 'geomembrana' | 'suelo' | 'cuerpo_agua'
+  notificadoMae     Boolean  @default(false) @map("notificado_mae")
+  desechoGeneradoId String?  @unique @map("desecho_generado_id") @db.Uuid
+  desechoGenerado   Desecho? @relation(fields: [desechoGeneradoId], references: [id])
+
+  emergencias EmergenciaEvento[] @relation("DerrameEscalaEmergencia")
+
+  @@map("derrame_eventos")
+  @@schema("qhse")
+}
+
+model Desecho {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  peligroso             Boolean
+  caracteristicasCretib String?  @map("caracteristicas_cretib") // solo si peligroso
+  contenedorColor       String   @map("contenedor_color")
+  estado                String // 'almacenado' | 'con_manifiesto' | 'dispuesto'
+
+  createdAt DateTime @default(now()) @map("created_at")
+  // limiteAlmacenamientoHasta = created_at + 12 meses (AM 142) — GENERATED en migración SQL
+
+  derrameOrigen  DerrameEvento?
+  manifiesto     DesechoManifiesto?
+
+  @@map("desechos")
+  @@schema("qhse")
+}
+
+model DesechoManifiesto {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  desechoId           String  @unique @map("desecho_id") @db.Uuid
+  desecho             Desecho @relation(fields: [desechoId], references: [id])
+  gestorLicenciaSuia  String  @map("gestor_licencia_suia")
+  firmaGenerador      String? @map("firma_generador")
+  firmaTransportista  String? @map("firma_transportista")
+  firmaGestor         String? @map("firma_gestor")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  certificado DesechoCertificado?
+
+  @@map("desecho_manifiestos")
+  @@schema("qhse")
+}
+
+model DesechoCertificado {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  manifiestoId  String            @unique @map("manifiesto_id") @db.Uuid
+  manifiesto    DesechoManifiesto @relation(fields: [manifiestoId], references: [id])
+  recibidoAt    DateTime?         @map("recibido_at")
+  // plazoVencimiento = manifiesto.createdAt + 30 días — GENERATED en migración SQL
+
+  @@map("desecho_certificados")
+  @@schema("qhse")
+}
+
+model EmergenciaEvento {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel                 Int? // 1 | 2 | 3
+  estado                String // 'activa' | 'controlada' | 'cerrada'
+  origenSwaId           String?  @unique @map("origen_swa_id") @db.Uuid
+  origenDerrameId       String?  @map("origen_derrame_id") @db.Uuid
+  conteoTotalLocacion   Int?     @map("conteo_total_locacion")
+  conteoEvacuados       Int?     @map("conteo_evacuados")
+  conteoCompletadoAt    DateTime? @map("conteo_completado_at")
+  reporteFlashEnviadoAt DateTime? @map("reporte_flash_enviado_at") // plazo duro de 2h, validado en servicio
+
+  swaOrigen     SwaEvento?         @relation("SwaEscalaEmergencia")
+  derrameOrigen DerrameEvento?     @relation("DerrameEscalaEmergencia", fields: [origenDerrameId], references: [id])
+  investigacion Investigacion?
+
+  timeline         EmergenciaTimeline[]
+  heridos          EmergenciaHerido[]
+  notificaciones   EmergenciaNotificacion[]
+
+  @@index([estado])
+  @@map("emergencia_eventos")
+  @@schema("qhse")
+}
+
+model EmergenciaTimeline {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emergenciaId String            @map("emergencia_id") @db.Uuid
+  emergencia   EmergenciaEvento  @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+  hora         DateTime
+  descripcion  String
+
+  @@index([emergenciaId, hora])
+  @@map("emergencia_timeline")
+  @@schema("qhse")
+}
+
+model EmergenciaHerido {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emergenciaId String           @map("emergencia_id") @db.Uuid
+  emergencia   EmergenciaEvento @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+  /// ✅ Ref. lógica a maestros.personas cuando el herido es identificable
+  /// (empleado o contratista con cédula registrada) — permite agregar por
+  /// persona real para LTIR (§16.1), no solo por nombre libre. NULL si es un
+  /// tercero no registrado (ej. visitante ocasional) — en ese caso `nombre` es
+  /// la única identificación disponible.
+  personaId        String?          @map("persona_id") @db.Uuid
+  nombre           String
+  triageColor      String           @map("triage_color") // 4 colores
+  medevacActivado  Boolean          @default(false) @map("medevac_activado")
+  medioTransporte  String?          @map("medio_transporte") // 'ambulancia'|'lancha'|'helicoptero'
+  hospitalDestino  String?          @map("hospital_destino")
+  etaMinutos       Int?             @map("eta_minutos")
+  /// ✅ Propuesto §16.1 (LTIR): días de trabajo perdidos, capturado en seguimiento posterior.
+  diasPerdidos     Int?             @map("dias_perdidos")
+
+  signosVitales EmergenciaSignoVital[]
+
+  @@index([emergenciaId])
+  @@map("emergencia_heridos")
+  @@schema("qhse")
+}
+
+model EmergenciaSignoVital {
+  id       String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  heridoId String           @map("herido_id") @db.Uuid
+  herido   EmergenciaHerido @relation(fields: [heridoId], references: [id], onDelete: Cascade)
+  hora     DateTime
+  presion  String?
+  pulso    Int?
+  otros    String?
+
+  @@index([heridoId, hora])
+  @@map("emergencia_signos_vitales")
+  @@schema("qhse")
+}
+
+model EmergenciaNotificacion {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emergenciaId    String           @map("emergencia_id") @db.Uuid
+  emergencia      EmergenciaEvento @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+  rolNotificadoId String           @map("rol_notificado_id") @db.Uuid // ref. lógica a auth.roles
+  plazoMinutos    Int              @map("plazo_minutos")
+  notificadoAt    DateTime?        @map("notificado_at")
+
+  @@map("emergencia_notificaciones")
+  @@schema("qhse")
+}
+
+model EntregaEpi {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String   @unique
+  trabajadorId      String   @map("trabajador_id") @db.Uuid // ref. lógica a maestros.personas
+  lugar             String
+  firmaTrabajador   String?  @map("firma_trabajador")
+  firmaTalentoHumano String? @map("firma_talento_humano")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  items EpiItem[]
+
+  @@map("entregas_epi")
+  @@schema("qhse")
+}
+
+model EpiItem {
+  id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entregaId             String     @map("entrega_id") @db.Uuid
+  entrega               EntregaEpi @relation(fields: [entregaId], references: [id], onDelete: Cascade)
+  elemento              String
+  cantidad              Int
+  talla                 String?
+  recibioCapacitacion   Boolean    @default(false) @map("recibio_capacitacion")
+  observaciones         String?
+
+  @@map("epi_items")
+  @@schema("qhse")
+}
+
+model InspeccionEquipo {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String    @unique
+  tipo                  String // 'eslinga_cable' | 'detector_gas' | 'vehiculo_grua'
+  resultado             String // 'aprobado' | 'rechazado'
+  bumpTestRealizado     Boolean?  @map("bump_test_realizado") // solo detector_gas
+  unitReportGeneradoId  String?   @map("unit_report_generado_id") @db.Uuid // ref. lógica a mantenimiento
+
+  createdAt DateTime @default(now()) @map("created_at")
+  // vigenciaHasta = createdAt + 3 meses fijo — GENERATED en migración SQL
+
+  @@map("inspecciones_equipo")
+  @@schema("qhse")
+}
+
+model Investigacion {
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resultado             String // fatal|grave|leve|primeros_auxilios|dano_material|near_miss|incidente_ambiental
+  estado                String            @default("abierta") // 'abierta' | 'cerrada'
+  origenEmergenciaId    String?           @unique @map("origen_emergencia_id") @db.Uuid
+  origenEmergencia      EmergenciaEvento? @relation(fields: [origenEmergenciaId], references: [id])
+  conclusion            String? // 'incidente' | 'accidente'
+  iperccActualizadoId   String?           @map("iperc_actualizado_id") @db.Uuid // ref. lógica a IpercMatrix
+
+  createdAt DateTime @default(now()) @map("created_at")
+  // plazoInicio/PlazoPreliminar/PlazoFinal — GENERATED según PLAZOS_POR_RESULTADO en migración SQL
+
+  testigos            InvestigacionTestigo[]
+  cincoPorques        InvestigacionCincoPorques[]
+  accionesCorrectivas InvestigacionAccionCorrectiva[]
+  notificacionLegal   InvestigacionNotificacionLegal?
+  trabajadorInvolucrado InvestigacionTrabajadorInvolucrado?
+
+  @@index([estado])
+  @@map("investigaciones")
+  @@schema("qhse")
+}
+
+/// ✅ Nuevo (cubre un vacío detectado, no un campo del diseño anterior): el
+/// frontend real (`Investigacion.trabajador?: TrabajadorInvolucrado`) solo
+/// llena esto cuando hubo lesionado — se había omitido en la primera versión
+/// de este schema. Reusa `maestros.personas` (mismo criterio que EmergenciaHerido).
+model InvestigacionTrabajadorInvolucrado {
+  investigacionId String        @id @map("investigacion_id") @db.Uuid
+  investigacion   Investigacion @relation(fields: [investigacionId], references: [id], onDelete: Cascade)
+  personaId       String        @map("persona_id") @db.Uuid // ref. lógica a maestros.personas
+  cargo           String?
+  diasPerdidos    Int?          @map("dias_perdidos") // §16.1 (LTIR)
+
+  @@map("investigacion_trabajador_involucrado")
+  @@schema("qhse")
+}
+
+model InvestigacionTestigo {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  investigacionId  String         @map("investigacion_id") @db.Uuid
+  investigacion    Investigacion  @relation(fields: [investigacionId], references: [id], onDelete: Cascade)
+  nombre           String
+  cargo            String
+  declaracion      String
+
+  @@map("investigacion_testigos")
+  @@schema("qhse")
+}
+
+model InvestigacionCincoPorques {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  investigacionId  String        @map("investigacion_id") @db.Uuid
+  investigacion    Investigacion @relation(fields: [investigacionId], references: [id], onDelete: Cascade)
+  orden            Int
+  pregunta         String
+  respuesta        String
+
+  @@map("investigacion_cinco_porques")
+  @@schema("qhse")
+}
+
+model InvestigacionAccionCorrectiva {
+  id                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  investigacionId           String        @map("investigacion_id") @db.Uuid
+  investigacion             Investigacion @relation(fields: [investigacionId], references: [id], onDelete: Cascade)
+  tipo                      String // 'correctiva' | 'preventiva'
+  estado                    String        @default("pendiente") // 'pendiente'|'implementada'|'verificada'
+  controlAplicadoA          String        @map("control_aplicado_a") // 'planeacion_diseno'|'fuente'|'medio'|'trabajador'
+  verificacionEficaciaFecha DateTime?     @map("verificacion_eficacia_fecha")
+
+  @@map("investigacion_acciones_correctivas")
+  @@schema("qhse")
+}
+
+model InvestigacionNotificacionLegal {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  investigacionId       String        @unique @map("investigacion_id") @db.Uuid
+  investigacion         Investigacion @relation(fields: [investigacionId], references: [id])
+  notificadoMinTrabajo  Boolean       @default(false) @map("notificado_min_trabajo")
+  notificadoIess        Boolean       @default(false) @map("notificado_iess")
+  fechaNotificacion     DateTime?     @map("fecha_notificacion")
+
+  @@map("investigacion_notificacion_legal")
+  @@schema("qhse")
+}
+
+/// Fila única de configuración — JSON justificado (§11.4): estructura variable
+/// por KPI, nunca se filtra por SQL.
+model DashboardMeta {
+  id           Int      @id @default(1)
+  payloadMetas Json     @map("payload_metas")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("qhse_dashboard_metas")
+  @@schema("qhse")
+}
+
+/// ✅ Propuesto §16.1 (TRIR): horas-hombre trabajadas por período/sitio,
+/// separando personal propio de terceros/subcontratistas.
+model HorasHombrePeriodo {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fecha           DateTime
+  pozoId          String?  @map("pozo_id") @db.Uuid // ref. lógica a maestros.pozos
+  contratista     String // 'propio' | 'tercero'
+  horasTrabajadas Decimal  @map("horas_trabajadas") @db.Decimal(10, 2)
+  registradoPor   String   @map("registrado_por") @db.Uuid
+
+  @@index([fecha, pozoId])
+  @@map("horas_hombre_periodo")
+  @@schema("qhse")
+}
+
+/// ✅ Propuesto §16.1 (% capacitados): sub-dominio nuevo, no existe hoy.
+model Capacitacion {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tema            String
+  fecha           DateTime
+  instructor      String
+  duracionHoras   Decimal  @map("duracion_horas") @db.Decimal(6, 2)
+  vigenciaMeses   Int      @map("vigencia_meses")
+
+  asistentes CapacitacionAsistente[]
+
+  @@map("capacitaciones")
+  @@schema("qhse")
+}
+
+model CapacitacionAsistente {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  capacitacionId  String       @map("capacitacion_id") @db.Uuid
+  capacitacion    Capacitacion @relation(fields: [capacitacionId], references: [id], onDelete: Cascade)
+  usuarioId       String       @map("usuario_id") @db.Uuid // ref. lógica a auth.usuarios
+  aprobado        Boolean      @default(false)
+  // vence_el = capacitacion.fecha + vigenciaMeses — GENERATED o calculado en servicio
+
+  @@unique([capacitacionId, usuarioId])
+  @@map("capacitacion_asistentes")
+  @@schema("qhse")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: documentos (servicio transversal, confirmado §17.16)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Documento {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidadTipo         String    @map("entidad_tipo") // ej. 'facturacion.pedido', 'qhse.investigacion'
+  entidadId           String    @map("entidad_id") @db.Uuid // ref. lógica, cruza schemas
+  categoria           String? // ej. 'reporte_job', 'formulario_inspeccion'
+  descripcion         String?
+  nombreOriginal      String    @map("nombre_original")
+  nombreArchivo       String    @unique @map("nombre_archivo")
+  mimeType            String    @map("mime_type")
+  tamanoBytes         Int       @map("tamano_bytes")
+  /// Relativo a la raíz del directorio dedicado del servidor (§17.15) — NO a S3.
+  rutaRelativa        String    @map("ruta_relativa")
+  version             Int       @default(1)
+  documentoAnteriorId String?   @map("documento_anterior_id") @db.Uuid
+  documentoAnterior   Documento? @relation("VersionAnterior", fields: [documentoAnteriorId], references: [id])
+  versiones           Documento[] @relation("VersionAnterior")
+  uploadedBy          String    @map("uploaded_by") @db.Uuid // ref. lógica a auth.usuarios
+  uploadedAt          DateTime  @default(now()) @map("uploaded_at")
+
+  @@index([entidadTipo, entidadId])
+  @@map("documentos")
+  @@schema("documentos")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: notificaciones (servicio transversal, confirmado §17.16)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notificacion {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidadTipo        String    @map("entidad_tipo")
+  entidadId          String    @map("entidad_id") @db.Uuid
+  tipo               String // 'cambio_estado' | 'cadena_notificacion_qhse' | 'vencimiento_plazo'
+  canal              String    @default("sistema") // 'sistema' | 'email' | 'sms'
+  destinatarioId     String?   @map("destinatario_id") @db.Uuid // ref. lógica a auth.usuarios
+  destinatarioRolId  String?   @map("destinatario_rol_id") @db.Uuid // ref. lógica a auth.roles
+  mensaje            String
+  estado             String    @default("pendiente") // 'pendiente'|'enviada'|'leida'|'fallida'
+
+  creadoAt  DateTime  @default(now()) @map("creado_at")
+  enviadoAt DateTime? @map("enviado_at")
+  leidoAt   DateTime? @map("leido_at")
+
+  @@index([entidadTipo, entidadId])
+  @@index([destinatarioId, estado])
+  @@map("notificaciones")
+  @@schema("notificaciones")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA: workflow (servicio transversal, confirmado §17.16)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Espejo agregado de solo lectura — NO reemplaza el historial de estado local
+/// de cada dominio (§10.2), lo complementa para vistas transversales (§6.9).
+model EstadoEvento {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidadTipo    String   @map("entidad_tipo")
+  entidadId      String   @map("entidad_id") @db.Uuid
+  dominio        String // 'facturacion' | 'operaciones_fcr' | ...
+  estadoAnterior String?  @map("estado_anterior")
+  estadoNuevo    String   @map("estado_nuevo")
+  usuarioId      String   @map("usuario_id") @db.Uuid
+  motivo         String?
+  fecha          DateTime @default(now())
+
+  @@index([entidadTipo, entidadId])
+  @@index([dominio, fecha])
+  @@map("estado_eventos")
+  @@schema("workflow")
+}

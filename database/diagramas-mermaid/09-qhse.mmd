@@ -1,0 +1,205 @@
+erDiagram
+    iperc_matrices {
+        uuid id PK
+        string code UK
+        string estado
+        uuid origen_ticket_id FK
+    }
+    iperc_tasks {
+        uuid id PK
+        uuid matrix_id FK
+        int orden
+    }
+    iperc_hazards {
+        uuid id PK
+        uuid task_id FK
+        int riesgo_inicial_nd
+        int riesgo_inicial_ne
+        int riesgo_inicial_nc
+    }
+    iperc_controles {
+        uuid id PK
+        uuid hazard_id FK
+        string tipo
+    }
+    ptw_matrices {
+        uuid id PK
+        string code UK
+        uuid iperc_matrix_id FK
+        string fase
+        boolean ptw_cerrado
+    }
+    ptw_gas_readings {
+        uuid id PK
+        uuid ptw_id FK
+        decimal h2s
+        decimal lel
+    }
+    ptw_daily_logs {
+        uuid id PK
+        uuid ptw_id FK
+        date fecha
+    }
+    stop_cards {
+        uuid id PK
+        string code UK
+        uuid observador_id FK
+    }
+    stop_card_items {
+        uuid id PK
+        uuid card_id FK
+        string bloque
+        string estado
+    }
+    swa_eventos {
+        uuid id PK
+        string estado
+        uuid ticket_id FK
+        uuid emergencia_id FK
+    }
+    swa_notificaciones {
+        uuid id PK
+        uuid swa_id FK
+        uuid rol_notificado_id FK
+    }
+    derrame_eventos {
+        uuid id PK
+        string estado
+        string volumen
+        uuid desecho_generado_id FK
+    }
+    desechos {
+        uuid id PK
+        boolean peligroso
+        string estado
+    }
+    desecho_manifiestos {
+        uuid id PK
+        uuid desecho_id FK
+        string gestor_licencia_suia
+    }
+    desecho_certificados {
+        uuid id PK
+        uuid manifiesto_id FK
+        timestamp recibido_at
+    }
+    emergencia_eventos {
+        uuid id PK
+        int nivel
+        string estado
+        uuid origen_derrame_id FK
+    }
+    emergencia_timeline {
+        uuid id PK
+        uuid emergencia_id FK
+        timestamp hora
+    }
+    emergencia_heridos {
+        uuid id PK
+        uuid emergencia_id FK
+        uuid persona_id FK
+        string triage_color
+        int dias_perdidos
+    }
+    emergencia_signos_vitales {
+        uuid id PK
+        uuid herido_id FK
+        timestamp hora
+    }
+    emergencia_notificaciones {
+        uuid id PK
+        uuid emergencia_id FK
+        uuid rol_notificado_id FK
+    }
+    entregas_epi {
+        uuid id PK
+        string code UK
+        uuid trabajador_id FK
+    }
+    epi_items {
+        uuid id PK
+        uuid entrega_id FK
+        string elemento
+    }
+    inspecciones_equipo {
+        uuid id PK
+        string code UK
+        string tipo
+        string resultado
+    }
+    investigaciones {
+        uuid id PK
+        string resultado
+        string estado
+        uuid origen_emergencia_id FK
+    }
+    investigacion_trabajador_involucrado {
+        uuid investigacion_id PK
+        uuid persona_id FK
+        int dias_perdidos
+    }
+    investigacion_testigos {
+        uuid id PK
+        uuid investigacion_id FK
+    }
+    investigacion_cinco_porques {
+        uuid id PK
+        uuid investigacion_id FK
+        int orden
+    }
+    investigacion_acciones_correctivas {
+        uuid id PK
+        uuid investigacion_id FK
+        string tipo
+        string estado
+    }
+    investigacion_notificacion_legal {
+        uuid id PK
+        uuid investigacion_id FK
+    }
+    dashboard_metas {
+        int id PK
+        json payload_metas
+    }
+    horas_hombre_periodo {
+        uuid id PK
+        date fecha
+        uuid pozo_id FK
+        string contratista
+    }
+    capacitaciones {
+        uuid id PK
+        string tema
+        date fecha
+    }
+    capacitacion_asistentes {
+        uuid id PK
+        uuid capacitacion_id FK
+        uuid usuario_id FK
+        boolean aprobado
+    }
+
+    iperc_matrices ||--o{ iperc_tasks : matrix_id
+    iperc_tasks ||--o{ iperc_hazards : task_id
+    iperc_hazards ||--o{ iperc_controles : hazard_id
+    iperc_matrices ||--o{ ptw_matrices : habilita
+    ptw_matrices ||--o{ ptw_gas_readings : ptw_id
+    ptw_matrices ||--o{ ptw_daily_logs : ptw_id
+    stop_cards ||--o{ stop_card_items : card_id
+    swa_eventos ||--o{ swa_notificaciones : swa_id
+    swa_eventos ||--o| emergencia_eventos : escala
+    derrame_eventos ||--o| desechos : genera
+    derrame_eventos ||--o| emergencia_eventos : escala
+    emergencia_eventos ||--o{ emergencia_timeline : emergencia_id
+    emergencia_eventos ||--o{ emergencia_heridos : emergencia_id
+    emergencia_heridos ||--o{ emergencia_signos_vitales : herido_id
+    emergencia_eventos ||--o{ emergencia_notificaciones : emergencia_id
+    emergencia_eventos ||--o| investigaciones : obliga
+    investigaciones ||--o| investigacion_trabajador_involucrado : investigacion_id
+    entregas_epi ||--o{ epi_items : entrega_id
+    desecho_manifiestos ||--o| desecho_certificados : manifiesto_id
+    investigaciones ||--o{ investigacion_testigos : investigacion_id
+    investigaciones ||--o{ investigacion_cinco_porques : investigacion_id
+    investigaciones ||--o{ investigacion_acciones_correctivas : investigacion_id
+    investigaciones ||--o| investigacion_notificacion_legal : investigacion_id
+    capacitaciones ||--o{ capacitacion_asistentes : capacitacion_id

@@ -1,0 +1,119 @@
+erDiagram
+    pedidos {
+        uuid id PK
+        string code UK
+        string origen
+        uuid cliente_id FK
+        string cliente_nombre_snapshot
+        uuid pozo_id FK
+        uuid agente_comercial_id FK
+        uuid representante_campo_id FK
+        uuid condicion_pago_id FK
+        uuid zona_id FK
+        uuid bodega_id FK
+        uuid tecnico_hse_responsable_id FK
+        string linea_servicio
+        string estado
+    }
+    pedido_items_estimado {
+        uuid id PK
+        uuid pedido_id FK
+        string codigo
+        decimal cantidad
+        decimal valor_unitario
+    }
+    pedido_historial_estado {
+        uuid id PK
+        uuid pedido_id FK
+        string estado
+        timestamp fecha
+        uuid usuario_id FK
+    }
+    listas_precios {
+        uuid id PK
+        uuid cliente_id FK
+        date vigente_desde
+        boolean activa
+    }
+    lista_precios_items {
+        uuid id PK
+        uuid lista_precios_id FK
+        string codigo
+        decimal precio
+        string tipo
+    }
+    documentos_operativos {
+        uuid id PK
+        uuid pedido_id FK
+        string origen
+        uuid ticket_operativo_id FK
+        string tipo
+        string estado
+    }
+    documento_operativo_actividades {
+        uuid id PK
+        uuid documento_id FK
+        date fecha
+        string detalle
+    }
+    documento_operativo_uso_herramientas {
+        uuid id PK
+        uuid documento_id FK
+        string herramienta_ref
+        date fecha
+        string status
+    }
+    prefacturas {
+        uuid id PK
+        string code UK
+        uuid pedido_id FK
+        decimal neto_cobrar
+        string estado
+    }
+    prefactura_items {
+        uuid id PK
+        uuid prefactura_id FK
+        string codigo
+        decimal precio_total
+        string tipo
+    }
+    guias_remision {
+        uuid id PK
+        uuid pedido_id FK
+        uuid prefactura_id FK
+        date fecha
+    }
+    guia_remision_items {
+        uuid id PK
+        uuid guia_id FK
+        string codigo
+        decimal cantidad
+    }
+    aots {
+        uuid id PK
+        uuid pedido_id FK
+        uuid prefactura_id FK
+        string numero_ot UK
+        string estado
+    }
+    aot_items {
+        uuid id PK
+        uuid aot_id FK
+        string descripcion
+        decimal valor
+    }
+
+    pedidos ||--o{ pedido_items_estimado : pedido_id
+    pedidos ||--o{ pedido_historial_estado : pedido_id
+    pedidos ||--o{ documentos_operativos : pedido_id
+    documentos_operativos ||--o{ documento_operativo_actividades : documento_id
+    documentos_operativos ||--o{ documento_operativo_uso_herramientas : documento_id
+    pedidos ||--o{ prefacturas : pedido_id
+    prefacturas ||--o{ prefactura_items : prefactura_id
+    pedidos ||--o{ guias_remision : pedido_id
+    prefacturas ||--o| guias_remision : prefactura_id
+    guias_remision ||--o{ guia_remision_items : guia_id
+    pedidos ||--o{ aots : pedido_id
+    prefacturas ||--o{ aots : prefactura_id
+    aots ||--o{ aot_items : aot_id
+    listas_precios ||--o{ lista_precios_items : lista_precios_id

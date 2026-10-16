@@ -1,0 +1,47 @@
+erDiagram
+    as2_pedidos_pendientes {
+        uuid id PK
+        string payload
+        timestamp created_at
+    }
+    as2_sync_log {
+        uuid id PK
+        string entidad
+        string entidad_code
+        string direccion
+        boolean exitoso
+    }
+    as2_secuencias {
+        string nombre PK
+        string ultimo_valor
+    }
+    as2_condiciones_pago {
+        uuid id PK
+        string codigo UK
+        string nombre
+        boolean activo
+    }
+    as2_formas_pago {
+        uuid id PK
+        string codigo UK
+        string nombre
+        boolean activo
+    }
+    as2_canales {
+        uuid id PK
+        string codigo UK
+        string nombre
+        boolean activo
+    }
+    as2_zonas {
+        uuid id PK
+        string codigo UK
+        string nombre
+        boolean activo
+    }
+    as2_bodegas {
+        uuid id PK
+        string codigo UK
+        string nombre
+        boolean activo
+    }

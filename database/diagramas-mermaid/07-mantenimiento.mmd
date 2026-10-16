@@ -1,0 +1,94 @@
+erDiagram
+    unidades {
+        uuid id PK
+        string code UK
+        string tipo
+        boolean activo
+    }
+    unidad_patrimonio {
+        uuid unidad_id PK
+        string placa
+        string marca
+        uuid responsable_patrimonial_id FK
+    }
+    unidad_control_operativo {
+        uuid unidad_id PK
+        decimal horometro_actual
+        decimal km_actual
+        string categoria_peso
+    }
+    unidad_registros_preventivos {
+        uuid id PK
+        uuid unidad_id FK
+        string tipo_servicio
+    }
+    maintenance_orders {
+        uuid id PK
+        string code UK
+        uuid unidad_id FK
+        uuid unit_report_id FK
+        boolean returned_to_operation
+    }
+    sub_orders {
+        uuid id PK
+        uuid order_id FK
+        string code UK
+        string type
+        uuid assigned_user_id FK
+        string status
+    }
+    sub_order_repuestos {
+        uuid id PK
+        uuid sub_order_id FK
+        string numero_parte
+        int cantidad
+    }
+    unit_reports {
+        uuid id PK
+        string report_no UK
+        uuid unidad_id FK
+        uuid pozo_id FK
+        date fecha_salida
+    }
+    unit_report_checklist {
+        uuid id PK
+        uuid report_id FK
+        string categoria
+    }
+    vehicle_inspections {
+        uuid id PK
+        uuid unidad_id FK
+        uuid ticket_id FK
+        uuid unit_report_id FK
+    }
+    vehicle_inspection_checklist {
+        uuid id PK
+        uuid inspection_id FK
+        string categoria
+        string estado
+    }
+    conductor_permisos {
+        uuid id PK
+        uuid persona_id FK
+        date licencia_vencimiento
+    }
+    registros_mantenimiento {
+        uuid id PK
+        uuid unidad_id FK
+        string clase
+        date fecha
+    }
+
+    unidades ||--|| unidad_patrimonio : "1 a 1"
+    unidades ||--|| unidad_control_operativo : "1 a 1"
+    unidades ||--o{ unidad_registros_preventivos : unidad_id
+    unidades ||--o{ maintenance_orders : unidad_id
+    unidades ||--o{ unit_reports : unidad_id
+    unidades ||--o{ vehicle_inspections : unidad_id
+    unidades ||--o{ registros_mantenimiento : unidad_id
+    unit_reports ||--o| maintenance_orders : unit_report_id
+    maintenance_orders ||--o{ sub_orders : order_id
+    sub_orders ||--o{ sub_order_repuestos : sub_order_id
+    unit_reports ||--o{ unit_report_checklist : report_id
+    vehicle_inspections ||--o{ vehicle_inspection_checklist : inspection_id
+    vehicle_inspections |o--o| unit_reports : "si No Cumple"

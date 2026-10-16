@@ -1,0 +1,27 @@
+Estimada
+
+En el programa anual se hace referencia al mantenimiento preventivo diferenciando entre unidades de servicio y unidades de apoyo
+
+Las unidades de servicio  son todos los equipos especiales que intervienen en la operación, como por ejemplo Coiled Tubing, Cementadores, unidades de bombeo, fracturadores, Batch Mixer, cisternas, gruas , etc. ..de estos equipos se lleva el mantenimiento en “horas de operación”  +/- 250 hrs  equipos estacionarios cada 6 meses si no cumplen las 250 hrs …o no tienen horómetros como las Cisternas y tanques por ejemplo.
+
+El control de horas se lo realiza cuando llenan el formato  que dice  “Reporte de unidad”  (se encuentra adjunto ) al momento de salir hacia el pozo, …en el mismo  formato cuando regresan,se llenan las novedades o fallas que se presentaron durante la operación   de orden mecanico, instrumentación, y orden operativo.  Debo aclarar que dentro de los problemas mecánicos se encuentran  los “problemas eléctricos” ..  En la parte de Instrumentación se abarcan problemas electrónicos. Con el reporte de unidad vamos dando seguimiento a las horas acumuladas para el siguiente mantenimiento , inclusive se podría colocar un casillero donde se mencione esas horas.
+
+ 
+
+El mismo Reporte de unidad, da lugar al inicio del mantenimiento correctivo, con la identificación de fallas.  Luego vienen  Las ordenes de trabajo interno donde se detalla las acciones correctivas ,…y en  la numeración colocamos el mismo número de reporte de unidad para darle seguimiento. (Adjunto los formatos  Orden de mantenimiento General  y Orden de mantenimiento Operativo).con sus respectivos responsables
+
+ 
+
+Para el  mantenimiento preventivo una vez completadas las horas de trabajo (250 hrs) llenamos un check list interno “de mantenimiento” de las observaciones y actividades a realizar,..este check list no se expone hacia el cliente ni es necesario que se integre al proceso que se está eleborando. Pero si es necesario que una vez  terminado el mantenimiento se emita  el INFORME de MANTENIMIENTO…donde se detalla el trabajo realizado.  Se adjunta el formato.
+
+ 
+
+Para los vehículos de apoyo,(camionetas,camiones ,cabezales) se llena un check list previo a la salida (se adjunta formato…  Inspeccion de vehiculos)…donde se detalla el estado del vehículo y sus componentes…si acaso el vehículo  presentara algún desperfecto en su trayecto ,..se deberá generar un Reporte de unidad para darle seguimiento y solución
+
+El mantenimiento  preventivo de estos vehículos se realiza con terceros,..pero el control de kilometraje se realiza a través de los check list para estar pendiente de los mantenimientos.  Le damos seguimiento en nuestra formato de cronograma de mantenimientos
+
+ 
+
+Todo lo mencionado se encuentra en el programa de mantenimiento anual que se adjunta a este correo al igual que los formatos que se han mencionado.
+
+A continuación el diagrama de flujo del proceso de mantenimiento

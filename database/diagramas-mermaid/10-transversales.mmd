@@ -1,0 +1,31 @@
+erDiagram
+    documentos {
+        uuid id PK
+        string entidad_tipo
+        uuid entidad_id FK
+        string categoria
+        string ruta_relativa
+        int version
+        uuid documento_anterior_id FK
+    }
+    notificaciones {
+        uuid id PK
+        string entidad_tipo
+        uuid entidad_id FK
+        string tipo
+        string canal
+        uuid destinatario_id FK
+        uuid destinatario_rol_id FK
+        string estado
+    }
+    estado_eventos {
+        uuid id PK
+        string entidad_tipo
+        uuid entidad_id FK
+        string dominio
+        string estado_anterior
+        string estado_nuevo
+        uuid usuario_id FK
+    }
+
+    documentos ||--o{ documentos : version_anterior

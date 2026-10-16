@@ -1,0 +1,53 @@
+erDiagram
+    roles {
+        uuid id PK
+        string code UK
+        string nombre UK
+        boolean activo
+    }
+    permisos {
+        uuid id PK
+        string code UK
+        string modulo
+        string recurso
+        string accion
+    }
+    rol_permisos {
+        uuid rol_id PK
+        uuid permiso_id PK
+    }
+    usuario_roles {
+        uuid usuario_id PK
+        uuid rol_id PK
+        timestamp asignado_at
+        uuid asignado_por FK
+    }
+    usuarios {
+        uuid id PK
+        string email UK
+        string username UK
+        string nombre
+        boolean estado_acceso
+        string especialidad
+    }
+    usuarios_datos_rrhh {
+        uuid usuario_id PK
+        string cedula
+        string cargo
+        string departamento
+        date fecha_ingreso
+        boolean empleado_activo
+    }
+    workflow_rol_responsable {
+        uuid id PK
+        string dominio
+        string paso_o_fase
+        uuid rol_id FK
+    }
+
+    roles ||--o{ rol_permisos : rol_id
+    permisos ||--o{ rol_permisos : permiso_id
+    usuarios ||--o{ usuario_roles : usuario_id
+    roles ||--o{ usuario_roles : rol_id
+    usuarios ||--|| usuarios_datos_rrhh : "1 a 1"
+    roles ||--o{ workflow_rol_responsable : rol_id
