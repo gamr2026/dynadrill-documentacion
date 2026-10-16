@@ -60,3 +60,8 @@
 - El firmado por el Company Man deja la prefactura como enviada (medio `portal`) y firmada en el mismo acto, porque la base exige `enviada_at` para el estado `firmada`. Si Dynadrill prefiere otro modelo, cambiar esa regla y la restricción de la base.
 - Las migraciones de este tramo llevan marca de tiempo 20261019…: las migraciones de otras sesiones con marca anterior ya aplicadas no chocan, pero evite crear migraciones de comercial con marca menor a `20261019110000`.
 - Mantener los permisos del frontend alineados: el frontend no conoce aún `vista_ticket`, `firma_company_man` ni `corregir`.
+
+## 6. Respaldos hechos al cierre
+
+- Backend `desarrollo` (commit `ef20cb5`), documentación `main` (`93e0d4e` más este archivo) y frontend `respaldo` (commit `ee378b1`) ya están en GitHub.
+- El commit del frontend `ee378b1` incluye también el trabajo en curso de las sesiones de Flota, Inventario, QHSE y Mantenimiento (se usó `git add -A`); no hay que deshacerlo, solo tener presente que ese commit mezcla módulos.
