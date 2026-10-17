@@ -118,3 +118,67 @@ IN1 (bodega del saldo inicial), IN2 (unidades reales), IN3 (datos negativos del 
 - La primera `prisma migrate deploy` de un schema nuevo falla con «migration persistence is not initialized»: crear a mano `<schema>._prisma_migrations` (mismo DDL que `pumping._prisma_migrations`) y repetir.
 - En Bash, los *heredocs* largos fallan: usar la herramienta de escritura. Los `.ts`/`.html` del frontend tienen CRLF: al editar por script, normalizar y restaurar.
 - Las rutas en las pruebas llevan el prefijo global `/api`.
+
+## Hallazgos de la revisión de base de datos (17/10/2026): pulir antes de seguir
+
+Revisado sobre las migraciones `20261018120000_init`, `20261018121000_categoria_quimica` y `20261018122000_categoria_lleva_partes`. El kardex inmutable, la FK compuesta de subcategoría y los CHECK de origen y tipo están bien: manténgalos.
+
+1. **`movimiento.tipo` y `movimiento.origen` repiten lo que ya determina `motivo_id`.** Elija una sola fuente: (a) quitar `tipo` y `origen` de `movimiento` y obtenerlos del motivo con JOIN, o (b) mantenerlos pero garantizar la coherencia con una FK compuesta `(motivo_id, tipo, origen)` hacia un índice único de `motivo_movimiento`, en lugar de un CHECK duplicado. Justifique la elección en el plan.
+2. **`pedido_id` y `ticket_id` sin FK** (decisión D1). Está permitido por ser de otro contenedor, pero la decisión D1 debe cerrarse; mientras tanto, pruebe que un movimiento de salida de ticket sin `ticket_id` es rechazado (ya hay CHECK) y que el consumidor del evento no duplica.
+3. **La migración `20261018122000` decide por el texto del nombre de la categoría** (la que se llama FISHING & TOOLS). Es lo que la regla 3 prohíbe: mueva esa asignación a la semilla (idempotente) y, en el código, use siempre `lleva_partes` y `es_quimica`, nunca el nombre.
+4. **Cargas pendientes:** `articulo_parte` y `articulo_codigo` están vacíos. Cargue las partes de las herramientas y los códigos alternos desde los datos reales de `prisma/data/` de la demo; si esos datos no los traen, documente la consulta a Dynadrill.
+5. **`unidad_stock`:** decida si es dato maestro compartido (entonces debe vivir en `catalogos`, con una migración coordinada por el registro) o propio de Inventario; anote la decisión.
+6. **`as2_id`** (conciliación con AS2): índice único hoy sin uso; documente cuándo se llena o retírelo.
+7. **Auditoría:** `articulo_codigo` no tiene auditoría; agréguela o justifique.
+8. **Stock:** confirme con una prueba que el stock calculado por bodega es la suma de movimientos y que 25 salidas simultáneas no dejan saldo negativo (bloqueo de fila).
+9. **Servicio y eventos:** exporte `registrarSalida`, `registrarEntrada`, `registrarConsumo`, `registrarDevolucion` y `stockDe`, y consuma `comercial.despacho.solicitado|resuelto` (el segundo ya trae `archivoRespaldoId` y `archivoMsdsId` desde el 17/10); consumidores idempotentes.
+
+## Estándar de calidad: base de datos y backend (obligatorio, revisión del 17/10/2026)
+
+El usuario revisa primero la base de datos. Antes de dar un tramo por terminado, verifique cada punto y déjelo anotado en su plan:
+
+1. **Sin datos duplicados.** Un dato vive en un solo lugar y se consulta con JOIN. Si por estar en otro contenedor (D1) debe guardar una referencia, guarde solo el id; si además necesita un texto copiado (código, nombre), justifíquelo por escrito en el plan y en un COMMENT de la columna, y manténgalo actualizado por evento.
+2. **Ningún id sin FK dentro del mismo servidor.** Un id polimórfico sin FK no se acepta: use una columna con FK por cada origen y un CHECK de que solo una esté llena, o una tabla puente. Los ids sin FK solo se admiten entre contenedores distintos y con COMMENT que lo diga.
+3. **Catálogos de verdad.** Valores que el negocio cambia o amplía son tabla con id uuid, código único y FK; valores fijos del sistema son enum de PostgreSQL. Nada de texto libre donde hay un conjunto conocido (tallas, lugares, categorías por nombre). No decida comportamiento comparando textos de nombres en migraciones ni en código: use una columna o un código estable.
+4. **Integridad en la base, no solo en el servicio.** CHECK de coherencia entre columnas, FK compuestas cuando un dato depende de dos tablas, índices únicos parciales para reglas como una vigente por clave, NOT NULL donde corresponde. Si una regla solo la valida el servicio, pregúntese si la base puede garantizarla.
+5. **Historia inmutable.** Kardex, lecturas, historiales y registros firmados: sin UPDATE y sin DELETE para el rol de la aplicación (REVOKE en la migración); los errores se corrigen con un registro nuevo.
+6. **Auditoría uniforme.** `created_at/created_by/updated_at/updated_by` con FK a `identidad.usuario` en toda tabla editable.
+7. **Permisos mínimos.** GRANT SELECT por columnas y solo lo necesario sobre tablas de otros schemas; justifique en un comentario cada dato personal que lea (por ejemplo, cédula).
+8. **Una migración por cambio, reversible por otra migración, sin editar migraciones ya aplicadas.** Los datos sembrados van en la semilla (idempotente), no en la migración, salvo catálogos mínimos del sistema.
+9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
+10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
+11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+
+---
+
+## Respuesta a la revisión de base de datos (17/10/2026)
+
+Migraciones nuevas (sin editar las aplicadas): `20261019120000_pulir_revision_bd` y `20261019121000_ver_id_de_archivos`. Pruebas de integración: **31 de 31 en verde**; `eslint` del módulo sin hallazgos (`nx lint`/`build` pendientes por el bloqueo).
+
+| # | Hallazgo | Qué se hizo |
+|---|---|---|
+| 1 | `tipo`/`origen` repetidos en `movimiento` | **Opción (b).** Se conservan en el movimiento porque las reglas del kardex (saldo, referencias) dependen de ellos y no deben cambiar nunca, pero la base garantiza la coherencia con una **FK compuesta** `(motivo_id, tipo, origen)` → `UNIQUE (id, tipo, origen)` de `motivo_movimiento` (`ON UPDATE RESTRICT`: un motivo con movimientos no puede cambiar de tipo ni de origen). Se retiró el CHECK duplicado `movimiento_origen_tipo_check` y la FK simple del motivo. Probado. La opción (a) obligaba a un subselect dentro del CHECK de referencias, que PostgreSQL no permite. |
+| 2 | `pedido_id`/`ticket_id` sin FK | El ticket es del **mismo servidor**, así que ya no es un uuid suelto: `movimiento.ticket_pumping_id` (FK a `pumping.ticket`) y `consumo_ticket.ticket_pumping_id` (FK). FCR agregará su columna `ticket_fcr_id` (cuando exista su schema) y cambiará el CHECK a `num_nonnulls(...) = 1`. El **pedido** ya no se guarda en el movimiento: el despacho (`inventario.despacho`) lo guarda una sola vez, y es el único uuid sin FK (otro contenedor, comercial; D1) con COMMENT que lo dice. CHECK de referencias en ambos sentidos (salida/devolución de ticket ⇔ ticket; despacho a bodega ⇔ despacho; el resto, sin referencia). Pruebas: salida de ticket sin ticket, ticket o despacho inexistentes, referencia donde no corresponde, y el consumidor de despachos **no duplica** con el evento repetido. |
+| 3 | La migración `…122000` decide por el nombre de la categoría | Esa migración ya está aplicada y no se edita. El criterio quedó así: el **código** usa siempre `es_quimica` y `lleva_partes` (nunca el nombre; hay una prueba con una categoría que no se llama «QUIMICA»), y la asignación a las categorías base se hace en la **semilla** (`marcarCategoriasBase`, idempotente: solo enciende lo apagado) y en la carga inicial. El nombre aparece solo ahí, que es dato, no comportamiento. |
+| 4 | `articulo_parte` y `articulo_codigo` vacíos | **Partes cargadas: 914 partes de 48 herramientas** (registro de inspección y reparación de Dynadrill, `prisma/data/herramientas.seed-data.ts` del `main` de la demo). Esas 48 herramientas **no están** en el export de AS2 (ni por código ni por nombre): se cargaron como artículos de la categoría `HERRAMIENTAS` con su propio código, sin existencias (consulta **IN10**). **Códigos alternos/comerciales/de barras: ningún dato real los trae** (ni `inventario.json` ni las listas); se documenta como consulta **IN11** y la pantalla ya permite capturarlos. |
+| 5 | `unidad_stock` ¿catálogo compartido? | **Propia de Inventario por ahora** (COMMENT en la tabla). Razón: las listas de precios y AS2 traen unidades como texto sin equivalencia confirmada (consulta C11 a Asinfo / IN9); moverla a `catalogos` exige una migración coordinada con plataforma y con comercial y sin esa equivalencia sería prematuro. Si se confirma, se migra con una sola migración. |
+| 6 | `as2_id` sin uso | **Se conserva**, con COMMENT: se llena cuando Asinfo exponga productos (B6, IN7); mientras tanto se concilia por `codigo`, que ya es el código de producto de AS2. |
+| 7 | `articulo_codigo` sin auditoría | Agregados `created_at/by`, `updated_at/by` (FK a `identidad.usuario`); el servicio los llena. Probado. |
+| 8 | Stock por bodega = suma; 25 salidas simultáneas | Probado (ya estaba y se ampliaron): suma por bodega = saldo de cada bodega; 25 salidas sobre 20 → salen 20 y el saldo queda en 0; 30 entradas simultáneas; 10 salidas simultáneas del mismo ticket sobre 6. |
+| 9 | Servicio exportado y consumo de eventos | `MovimientosService` exporta `registrarEntrada`, `registrarSalidaManual`, `registrarSalida`, `registrarConsumo`, `registrarDevolucion`, `registrarSalidaDespacho`, `balanceDeTicket`, `stockDe` (todos reciben la `tx` de quien llama). **Consumo** = tabla `consumo_ticket`, inmutable, que no mueve stock; asignado/devuelto no se guardan: se calculan del kardex. Se consumen `comercial.despacho.solicitado|resuelto` (`DespachosConsumer`, inbox idempotente, ignora sin error lo inválido) hacia `inventario.despacho` (con `archivo_respaldo_id` y `archivo_msds_id` con FK a `archivos.archivo`, CHECK de estado). Contrato 4.1 reescrito y vigente. |
+
+### Estándar de calidad: verificación punto por punto
+
+1. **Sin duplicados:** nombres por JOIN; `pedido_id` solo en `despacho`; `tipo/origen` del movimiento garantizados por FK compuesta (justificación arriba). 2. **Ids con FK:** todo id del mismo servidor tiene FK (ticket, despacho, archivos, usuarios, bodega); el único sin FK es `despacho.pedido_id` (comercial), con COMMENT. 3. **Catálogos:** categoría, subcategoría, unidad y motivo son tablas; origen/tipo/estado son enums; ningún comportamiento depende de un nombre. 4. **Integridad en la base:** CHECK de cantidad, saldo, referencias, estado del despacho; FK compuestas (subcategoría de la categoría; motivo-tipo-origen). 5. **Historia inmutable:** `movimiento` y `consumo_ticket` sin UPDATE ni DELETE para `app_operaciones` (probado). 6. **Auditoría:** todas las tablas editables. 7. **Permisos mínimos:** `SELECT` solo de `catalogos.bodega`, de `identidad.usuario (id, nombre, email, activo, rol_id)`, `identidad.rol (id, codigo, nombre)` y `archivos.archivo (id)`; no se lee ningún dato personal más. 8. **Una migración por cambio:** sin editar las aplicadas; los datos van en la semilla y la carga. 9. **Backend:** servicios pequeños, DTO validados, errores en español con código, transacción única con outbox, consumidor idempotente. 10. **Pruebas:** violan CHECK, FK y REVOKE y esperan el rechazo.
+
+### Dependencia de migraciones (para `infra:reset` o una base nueva)
+`20261019120000_pulir_revision_bd` tiene FK a `pumping.ticket` y a `archivos.archivo`: aplicar **antes** `db:migrate:pumping` y `db:migrate:archivos`. Orden: archivos → pumping → inventario.
+
+### Pendiente (sin cambios) del módulo
+`ng test`/`ng build`, `nx lint`/`build`, reinicio de `operaciones`, commit local; pantalla de despachos de Inventario (hoy sigue la de comercial/demo); FCR (I4); mínimos de stock (IN4).
+
+### Verificación del 17/10/2026
+- Backend: `nx lint build -p inventario operaciones` en verde; 31 de 31 pruebas de integración.
+- Frontend: `ng test` de `features/inventario` en verde (12 pruebas). `ng build` **no pudo validar mis plantillas**: se detiene en un error de Flota (`features/flota/pages/unidad-detail-page/unidad-detail-page.html` no existe todavía); repetirlo cuando Flota lo cree.
+- Siguen pendientes: reinicio del contenedor `operaciones` y prueba a mano, commit local, `nx test` completo y la pantalla de despachos de Inventario.

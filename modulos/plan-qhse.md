@@ -1,7 +1,7 @@
 # Plan: QHSE (Calidad, Salud, Seguridad y Ambiente)
 
-**Schema:** `qhse` · **Contenedor:** **qhse (nuevo, puerto 3104)** · **Librería:** `libs/qhse/<subdominio>` o una sola `libs/qhse/seguridad` con submódulos (decida en el primer tramo y déjelo escrito aquí) · **Prefijo HTTP:** `/api/v2/qhse` (reescrito a `/api/qhse` por el gateway; el `/api/qhse` de la demo **sigue en la demo** hasta el corte)
-**Estado:** por construir · **Ola:** 1, empezando por el tramo que Pumping necesita (Q1) · **Tamaño:** el más grande de todos (≈ 3.300 líneas de backend y ≈ 10.300 de frontend en la demo)
+**Schema:** `qhse` · **Contenedor:** **qhse (nuevo, puerto 3104)** · **Librería:** **una sola, `libs/qhse/seguridad`** (`@dyn/qhse`, proyecto Nx `qhse-seguridad`), con una carpeta por subdominio dentro de `src/` (decidido en Q1: un schema `qhse` implica una sola tabla de historial de Prisma y un solo `schema.prisma`; varias librerías se pisarían) · **Prefijo HTTP:** `/api/v2/qhse` (reescrito a `/api/qhse` por el gateway; el `/api/qhse` de la demo **sigue en la demo** hasta el corte)
+**Estado:** **Q1 construido** (16/10/2026; ver la sección «Estado de avance» al final) · **Ola:** 1, empezando por el tramo que Pumping necesita (Q1) · **Tamaño:** el más grande de todos (≈ 3.300 líneas de backend y ≈ 10.300 de frontend en la demo)
 **Lea antes:** `00`, `01`, `02` (contratos 3, 4.5, 4.6, 4.11), `03` (D1, D6, D7, D10) y `04-REVISION-CONTRA-DEMO-MAIN.md` (hallazgos 4, 9, 12, 13), `documentacion/PLAN-QHSE-PUMPING-NOTIFICACIONES.md` y `documentacion/qhse/QHSE-CAMBIOS-PENDIENTES.md`. **Revisado contra el `main` de la demo (08/10/2026).**
 
 ## 1. Objetivo
@@ -99,3 +99,69 @@ Por tramo: integración con base real (estados y transiciones, permisos por rol,
 ## 12. Preguntas abiertas entre módulos
 
 _(Pumping: ¿expone un endpoint de consulta de aceptaciones de términos o lo consume QHSE por evento? · Flota: ¿quién abre el caso de inspección de vehículos cuando una inspección QHSE de vehículo-grúa se rechaza?)_
+
+## 13. Estado de avance
+
+### Q1 — Contenedor + EPI + consulta de términos · **construido el 16/10/2026**
+
+**Qué quedó**
+- **Contenedor `qhse`** (`apps/qhse`, puerto 3104, usuario `app_qhse`, `msg_qhse`): creado, con salud, `levantar-local.ps1` y el gateway con el prefijo `/api/v2/qhse` (reescrito a `/api/qhse`). `/api/qhse` sigue en la demo.
+- **Migración `20261016190000_epi_y_referencia_de_tickets`** aplicada y semilla (`npm run db:seed:qhse`: 12 elementos de EPI). Tablas: `ticket_ref` (el ticket se conoce por evento, sin FK al schema ajeno: D1), `epi_elemento` (catálogo), `epi_entrega` (cabecera; trabajador, quién aprobó, rechazó, despachó y firmó = FK a `identidad.usuario`; enum `estado_epi`; restricción que obliga a que las fechas coincidan con el estado), `epi_entrega_item` (renglones con FK al catálogo) y `epi_entrega_historial` (rastro que solo se agrega). Cero JSON, cero copias de nombre; la cédula y el cargo salen de `identidad.usuario_perfil` por JOIN (`GRANT SELECT` solo de `cedula` y `cargo`).
+- **API** `/api/v2/qhse/epi`: listar, detalle, catálogo de elementos, crear a mano, guardar renglones y lugar, aprobar, rechazar (motivo), despachar, revertir (motivo), firma del trabajador y recibe conforme de Talento Humano. Permisos nuevos: `qhse.epi.ver|crear|aprobar|despachar` (Técnico HSE, Gerente HSE y administradores; el Supervisor no entra). Para despachar hacen falta: aprobada, al menos un elemento, lugar y declaración del trabajador.
+- **Eventos**: consume `operaciones.pumping.asignacion_realizada` (abre una solicitud por operador asignado, idempotente, y un solo aviso a QHSE por asignación: `qhse.epi.solicitudes_abiertas`) y `ticket_creado` (referencia del ticket). Publica `qhse.epi.despachada` / `qhse.epi.revertida` (contrato 3, ya **vigentes**) y `qhse.epi.solicitada|aprobada|rechazada`. Plantillas de aviso en `libs/plataforma/avisos/.../plantillas/qhse.ts` (Técnico y Gerente HSE).
+- **Pantallas** (`dynadrill-frontend-platform`, `features/qhse/entrega-epi/`): bandeja con KPI, filtros y búsqueda; detalle con edición de renglones, acciones del ciclo según permiso e historial; registro manual; hoja imprimible DYN-SGI-RE-032 (`window.print()`); pestaña «Términos y condiciones (Pumping)» con constancia imprimible. La ruta `/dashboard/qhse/epi` se autoriza por permiso. Las carpetas del demo (`features/qhse/epi`) siguen para el ticket antiguo de Pumping.
+- **Pruebas** de integración con base real (`RUN_INTEGRATION=1 npx jest` en la librería): consumidor, idempotencia, ciclo completo, contrato 3, rechazo, registro manual, permisos (el Supervisor no entra), reglas de la base y rastro inmutable.
+
+**Lo que falta de Q1 / pendiente de otros**
+- **Términos**: depende de que Pumping publique `GET /api/operaciones/pumping/terminos/aceptaciones` (pedido en el registro y contrato 4.12). Mientras tanto la pestaña muestra un aviso. La constancia aún no incluye el texto aceptado (hace falta que Pumping lo entregue por versión).
+- **Pumping** puede retirar el puente temporal de `epi_despachado` cuando QHSE esté levantado.
+- Consultas para Dynadrill: `documentacion/qhse/CONSULTAS-PARA-DYNADRILL.md` (sección QHSE).
+
+### Próximo tramo: Q2 (SWA, STOP, inspecciones de campo y «Reportar»)
+
+## Hallazgos de la revisión de base de datos (17/10/2026): pulir antes de seguir
+
+Revisado sobre `20261016190000_epi_y_referencia_de_tickets`. Los CHECK que atan el estado de la entrega a sus fechas, el índice único parcial por ticket y trabajador y la bitácora sin UPDATE están bien: manténgalos.
+
+1. **`ticket_ref` copia datos de otro contenedor** (`ticket_numero`, `pedido_codigo`). Reduzca a los ids; si necesita mostrar el número o el código, justifique la copia en COMMENT y en el plan, y manténgala por evento (con prueba de que un cambio posterior se actualiza).
+2. **Texto libre donde hay conjuntos conocidos:** `epi_entrega.lugar`, `epi_entrega_item.talla` y `epi_entrega_item.codigo`. Modele `lugar` con FK a un catálogo de `catalogos` (campo, base o bodega, según el formato), `talla` como catálogo o enum por tipo de elemento, y decida si `codigo` es el código de un artículo de Inventario (entonces FK a `inventario.articulo`).
+3. **EPI versus Inventario:** `epi_elemento` es un catálogo propio, pero la entrega de EPI es una salida de bodega. Defina con la sesión de Inventario si cada elemento es un `inventario.articulo` (y la entrega genera la salida de kardex) o si QHSE lleva su propio control; anote la decisión en `03-DECISIONES-PENDIENTES.md`.
+4. **Historia incompleta:** `epi_entrega_historial` prohíbe UPDATE pero permite DELETE; revoque también DELETE. `epi_entrega_item` tiene `GRANT DELETE` aunque la entrega ya esté despachada: la base debe impedir cambiar los renglones de una entrega despachada (trigger de validación o un diseño que lo garantice), no solo el servicio.
+5. **Auditoría:** `epi_entrega_item` y `epi_elemento` no tienen `created_*/updated_*`; agréguelos o justifique.
+6. **Datos personales:** `GRANT SELECT (cedula, cargo)` sobre `identidad.usuario_perfil`: justifique en un comentario por qué QHSE necesita la cédula (el formato de entrega la imprime) y no lea más columnas.
+7. **`epi_entrega.numero` autonumérico:** confirme que el número es el consecutivo del formato DYN-SGI-RE-032 y que no debe pasar por el motor de secuenciales de plataforma; anótelo.
+8. **Falta construir** con el mismo estándar: los demás subdominios de QHSE (permisos de trabajo, SWA, inspecciones, eventos, IPERC, Acta de Entrega de Locación, contrato 4.11), el consumo de `operaciones.pumping.*` que ya existe, y publicar `qhse.epi.despachada|revertida` (contrato 3).
+9. **Pruebas:** intentos de violar los CHECK de estado, el índice único por ticket y el REVOKE del historial, y de cambiar renglones de una entrega despachada.
+
+## Estándar de calidad: base de datos y backend (obligatorio, revisión del 17/10/2026)
+
+El usuario revisa primero la base de datos. Antes de dar un tramo por terminado, verifique cada punto y déjelo anotado en su plan:
+
+1. **Sin datos duplicados.** Un dato vive en un solo lugar y se consulta con JOIN. Si por estar en otro contenedor (D1) debe guardar una referencia, guarde solo el id; si además necesita un texto copiado (código, nombre), justifíquelo por escrito en el plan y en un COMMENT de la columna, y manténgalo actualizado por evento.
+2. **Ningún id sin FK dentro del mismo servidor.** Un id polimórfico sin FK no se acepta: use una columna con FK por cada origen y un CHECK de que solo una esté llena, o una tabla puente. Los ids sin FK solo se admiten entre contenedores distintos y con COMMENT que lo diga.
+3. **Catálogos de verdad.** Valores que el negocio cambia o amplía son tabla con id uuid, código único y FK; valores fijos del sistema son enum de PostgreSQL. Nada de texto libre donde hay un conjunto conocido (tallas, lugares, categorías por nombre). No decida comportamiento comparando textos de nombres en migraciones ni en código: use una columna o un código estable.
+4. **Integridad en la base, no solo en el servicio.** CHECK de coherencia entre columnas, FK compuestas cuando un dato depende de dos tablas, índices únicos parciales para reglas como una vigente por clave, NOT NULL donde corresponde. Si una regla solo la valida el servicio, pregúntese si la base puede garantizarla.
+5. **Historia inmutable.** Kardex, lecturas, historiales y registros firmados: sin UPDATE y sin DELETE para el rol de la aplicación (REVOKE en la migración); los errores se corrigen con un registro nuevo.
+6. **Auditoría uniforme.** `created_at/created_by/updated_at/updated_by` con FK a `identidad.usuario` en toda tabla editable.
+7. **Permisos mínimos.** GRANT SELECT por columnas y solo lo necesario sobre tablas de otros schemas; justifique en un comentario cada dato personal que lea (por ejemplo, cédula).
+8. **Una migración por cambio, reversible por otra migración, sin editar migraciones ya aplicadas.** Los datos sembrados van en la semilla (idempotente), no en la migración, salvo catálogos mínimos del sistema.
+9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
+10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
+11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+### Correcciones de la revisión de base de datos (17/10/2026) — migración `20261017100000_epi_catalogos_integridad_y_auditoria`
+
+| # | Hallazgo | Resolución |
+|---|---|---|
+| 1 | `ticket_ref` copia datos de otro contenedor | **Se conserva solo lo justificado**: `ticket_id` y `pedido_id` son ids sin FK (otro contenedor, D1; COMMENT lo dice). `ticket_numero` y `pedido_codigo` son copias justificadas (bandeja, hoja imprimible y avisos de QHSE los muestran y no se pueden obtener con JOIN), con COMMENT, mantenidas por evento: la prueba «guarda la referencia del ticket cuando Pumping lo crea y la actualiza sin duplicarla» ejercita el cambio posterior (111 → 222). |
+| 2 | Texto libre en `lugar`, `talla`, `codigo` | `lugar` → `lugar_bodega_id` con FK a `catalogos.bodega` (GRANT SELECT de id, nombre y habilitado). `talla` → `talla_id` con FK a la tabla nueva `epi_talla` (enum `tipo_talla`: ropa, calzado, guante); `epi_elemento.requiere_talla` → `tipo_talla` (enum, `null` = no lleva talla) y código estable `codigo` (el comportamiento nunca depende del nombre). `codigo` del renglón **se elimina**: era un texto libre sin dueño (ver 3); la cédula sale del perfil. |
+| 3 | EPI versus Inventario | Decisión **D16** en `03-DECISIONES-PENDIENTES.md`: QHSE no puede tener FK a `inventario.articulo` (otro contenedor). Avanza con su propio catálogo; el descuento de existencias, si se quiere, será por evento. Pendiente de Dynadrill. |
+| 4 | Historia incompleta | `REVOKE UPDATE, DELETE` sobre `epi_entrega_historial` (explícito). Trigger `epi_entrega_item_validar`: los renglones solo se agregan, cambian o quitan mientras la entrega está solicitada o aprobada (despachada y rechazada no), y la talla debe ser del tipo del elemento. Trigger `epi_entrega_congelar`: una entrega despachada no cambia trabajador, ticket, lugar, firmas ni fechas (solo se completa el «recibe conforme» de Talento Humano; para corregir se revierte con motivo). |
+| 5 | Auditoría | `epi_elemento`, `epi_talla` y `epi_entrega_item` ahora tienen `created_at/by` y `updated_at/by` (FK a `identidad.usuario`). El servicio registra el actor en cada renglón. |
+| 6 | Datos personales | `GRANT SELECT (cedula, cargo)` se mantiene y se justifica en el COMMENT de `epi_entrega.trabajador_id`: el formato DYN-SGI-RE-032 imprime la cédula y el cargo del trabajador; no se lee ninguna otra columna ni se copia el dato. |
+| 7 | `epi_entrega.numero` | Es el consecutivo interno visible (EPI-000001). El formato DYN-SGI-RE-032 no tiene numeración propia y no es un documento comercial, por eso **no** pasa por el motor de secuenciales de plataforma (COMMENT en la columna). |
+| 8 | Falta construir | Es el resto del plan (Q2 a Q6). Lo de Q1 que decía el hallazgo (consumo de `operaciones.pumping.*` y `qhse.epi.despachada|revertida`) ya está construido y probado. |
+| 9 | Pruebas | 24 pruebas de integración: CHECK de estado, índice único por ticket y trabajador, REVOKE del historial (UPDATE y DELETE), renglones de una entrega despachada o rechazada (agregar, cambiar, quitar), cabecera congelada, talla de otro tipo, elemento sin talla con talla, FK de lugar y de talla, y auditoría de renglones. |
+
+**Estándar de calidad, punto por punto (Q1):** 1 sin duplicados salvo las dos copias justificadas · 2 ids sin FK solo entre contenedores y con COMMENT · 3 catálogos con id, código único y FK (elementos, tallas, lugar) y enums para valores fijos · 4 integridad en la base (CHECK, triggers, índice único parcial, FK) · 5 historial inmutable · 6 auditoría en toda tabla editable (el historial es solo-agregar) · 7 permisos mínimos con comentario · 8 migración nueva, sin editar la anterior; los catálogos van en la semilla · 9 servicios divididos (`EpiService` ciclo y eventos, `EpiConsultaService` lectura, `EpiRenglonesService` renglones), DTO con class-validator, mensajes con «usted», transacciones y outbox en la misma transacción, consumidor idempotente · 10 pruebas que intentan violar las reglas · 11 revisado contra esta lista.
+

@@ -113,3 +113,53 @@ Solo en `dynadrill-frontend-platform/src/app/features/maintenance/reportes-nuevo
 - **Colas de RabbitMQ compartidas** entre módulos del mismo contenedor (cambio en `libs/shared/messaging`): ¿lo autoriza la sesión principal?
 - Respuestas a M-1 a M-6 (en especial numeración de reportes y fórmulas de KPI).
 - Cómo respaldar el trabajo en git dado que todas las sesiones comparten un solo árbol de trabajo.
+
+## Hallazgos de la revisión de base de datos (17/10/2026): pulir antes de seguir
+
+Revisado sobre `20261016200000_reportes_ordenes_y_subordenes`. El CHECK de origen del reporte, las FK reales a Flota y Pumping y los pares de columnas (asignación, cierre, retorno) están bien: manténgalos.
+
+1. **Claves de texto en los catálogos** (`tipo_suborden`, `estado_suborden`): usan el código como clave primaria. El resto de la plataforma usa `id uuid` + `codigo` único + FK. Unifique el patrón (o documente por escrito por qué esta es la excepción) para no tener dos estilos.
+2. **Copia de texto de QHSE:** `reporte_recibido.novedad_qhse` copia la novedad de otro módulo y `qhse_referencia_id` no tiene FK. Es aceptable solo por ser de otro contenedor (D1): déjelo anotado en COMMENT, en este plan y en la decisión D1, y mantenga el texto actualizado por evento o conserve solo el id y pida el texto por el contrato.
+3. **Acoplamiento con `pumping.reporte_unidad`:** la FK es válida (mismo contenedor) pero ata los dos schemas. Agregue una prueba de integración que cubra el camino completo (reporte de Pumping, evento, reporte recibido, orden) y anótelo en el contrato 4.2 para que Pumping no cambie esa tabla sin avisar por el registro.
+4. **Repuestos como texto:** la sub-orden lleva repuestos; modélelos en una tabla `suborden_repuesto` (número de parte, cantidad, descripción, o FK a `inventario.articulo` cuando exista), nunca en un campo de texto.
+5. **Columnas pendientes de FCR y Vehículos:** agréguelas con migración propia cuando existan sus tablas, con su FK y el CHECK de origen ya previsto.
+6. **Textos largos de la sub-orden** (`diagnostico`, `actividades_correctivas`, `trabajos_adicionales`): están bien como texto libre porque son redacción, pero compruebe que no haya conjuntos conocidos escondidos ahí.
+7. **Contador propio:** pruebe que 25 reportes simultáneos no repiten número (bloqueo de fila, igual que la prueba de secuenciales).
+8. **Falta construir** con el mismo estándar: M2 máquina de estados completa (el estado de la orden se deriva, no se guarda), M3 historial de mantenimientos y preventivos (usa el servicio de Flota, no escribe sus tablas), M4 tarjeta en el ticket, avisos, KPI.
+9. **Auditoría:** `reporte_recibido` no tiene `created_by/updated_by`; agréguelos o justifique con `recibido_por`.
+
+## Estándar de calidad: base de datos y backend (obligatorio, revisión del 17/10/2026)
+
+El usuario revisa primero la base de datos. Antes de dar un tramo por terminado, verifique cada punto y déjelo anotado en su plan:
+
+1. **Sin datos duplicados.** Un dato vive en un solo lugar y se consulta con JOIN. Si por estar en otro contenedor (D1) debe guardar una referencia, guarde solo el id; si además necesita un texto copiado (código, nombre), justifíquelo por escrito en el plan y en un COMMENT de la columna, y manténgalo actualizado por evento.
+2. **Ningún id sin FK dentro del mismo servidor.** Un id polimórfico sin FK no se acepta: use una columna con FK por cada origen y un CHECK de que solo una esté llena, o una tabla puente. Los ids sin FK solo se admiten entre contenedores distintos y con COMMENT que lo diga.
+3. **Catálogos de verdad.** Valores que el negocio cambia o amplía son tabla con id uuid, código único y FK; valores fijos del sistema son enum de PostgreSQL. Nada de texto libre donde hay un conjunto conocido (tallas, lugares, categorías por nombre). No decida comportamiento comparando textos de nombres en migraciones ni en código: use una columna o un código estable.
+4. **Integridad en la base, no solo en el servicio.** CHECK de coherencia entre columnas, FK compuestas cuando un dato depende de dos tablas, índices únicos parciales para reglas como una vigente por clave, NOT NULL donde corresponde. Si una regla solo la valida el servicio, pregúntese si la base puede garantizarla.
+5. **Historia inmutable.** Kardex, lecturas, historiales y registros firmados: sin UPDATE y sin DELETE para el rol de la aplicación (REVOKE en la migración); los errores se corrigen con un registro nuevo.
+6. **Auditoría uniforme.** `created_at/created_by/updated_at/updated_by` con FK a `identidad.usuario` en toda tabla editable.
+7. **Permisos mínimos.** GRANT SELECT por columnas y solo lo necesario sobre tablas de otros schemas; justifique en un comentario cada dato personal que lea (por ejemplo, cédula).
+8. **Una migración por cambio, reversible por otra migración, sin editar migraciones ya aplicadas.** Los datos sembrados van en la semilla (idempotente), no en la migración, salvo catálogos mínimos del sistema.
+9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
+10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
+11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 14. Respuesta a la revisión de base de datos y verificación del estándar (17/10/2026)
+
+Migración nueva `20261017100000_catalogos_con_id_auditoria_y_repuestos` (aplicada; la anterior no se editó). Pruebas: 30 verdes.
+
+| Hallazgo | Qué se hizo |
+|---|---|
+| 1. Catálogos con clave de texto | `tipo_suborden` y `estado_suborden` ahora tienen `id uuid` + `codigo` único; `suborden` y `transicion_suborden` apuntan por FK a ese id. La semilla genera UUIDv7. Los códigos (`pendiente`, `mecanico`…) siguen siendo estables y la aplicación los traduce al id. |
+| 2. Texto de QHSE | Se mantiene por ser otro contenedor (D1). Quedó escrito en `COMMENT` de `qhse_referencia_id` y `novedad_qhse`, aquí y en el contrato 4.2/D1: es el **único** texto copiado de otro módulo, se actualiza por evento; el de Pumping no se copia (se lee por JOIN). |
+| 3. Acoplamiento con Pumping | FK conservada (mismo contenedor). Prueba de «camino completo» (reporte de Pumping → evento → reporte recibido → orden, verificado con un solo JOIN de las cuatro tablas). Anotado en el contrato 4.2 y en el registro: Pumping no cambia `reporte_unidad` sin avisar. |
+| 4. Repuestos | Tabla `suborden_repuesto` (parte, cantidad > 0, descripción, `articulo_id` FK a `inventario.articulo`, única por parte y sub-orden, con auditoría). La usa M2. |
+| 5. FCR y Vehículos | Pendiente con su migración propia cuando existan `fcr` y la inspección de Flota (F3); el CHECK de origen ya está previsto y se extiende entonces. |
+| 6. Textos largos | Revisados: `diagnostico`, `actividades_correctivas`, `trabajos_adicionales`, `nota_*` son redacción libre; no esconden conjuntos conocidos. |
+| 7. Contador | Prueba con 25 reportes simultáneos sin números repetidos (bloqueo de fila). |
+| 8. M2, M3, M4 | Siguen pendientes (sección 13); se construyen con este estándar. |
+| 9. Auditoría | `reporte_recibido` ahora tiene `created_by/updated_by` (FK a `identidad.usuario`), llenados al recibir y al descartar. Catálogos del sistema sin auditoría de edición (están en `COMMENT`: se siembran). |
+
+Verificación del estándar de calidad: (1) sin datos duplicados, salvo la excepción 2; (2) sin id sin FK en el mismo contenedor; (3) catálogos con id y códigos estables, sin comparar nombres; (4) CHECK de origen, de descarte, de retorno, de asignación y de cierre, índices únicos (un reporte de Pumping se recibe una vez, un tipo por orden, una parte por sub-orden); (5) sin historia propia todavía: el historial de M3 nacerá sin UPDATE/DELETE para `app_operaciones` (hoy la aplicación ya **no puede borrar** reportes ni órdenes, probado); (6) auditoría uniforme; (7) lectura de maestros solo por columnas (`identidad.usuario`: id, nombre, correo, activo, rol; ningún dato personal sensible); (8) una migración por cambio; (9)-(10) pruebas que intentan violar CHECK, FK y permisos y esperan el rechazo.
+
+Pendiente de revisión por el usuario: ver decisiones en el mensaje final (colas de RabbitMQ, numeración, git).

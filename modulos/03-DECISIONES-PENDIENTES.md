@@ -21,6 +21,8 @@ Cada sesión puede avanzar con la **opción recomendada** mientras no haya respu
 
 | D15 | **Cambios de la demo `main` que tocan módulos ya construidos**: (a) Ingeniería de Ventas puede crear y dar de baja pozos, taladros y personas desde el pedido (`catalogosWrite`); (b) la firma del Company Man se gestiona desde el ticket y la prefactura se genera al cerrarlo; (c) Facturación corrige el Reporte Job y la bitácora por día | Aplicarlos (ver `plan-comercial-ajustes.md`). (a) cambia permisos de `catalogos` | comercial, catálogos, Pumping, FCR | **(a) Resuelta** (aprobada por el usuario; aplicada: `catalogosWrite` = Superadmin, Jefe de Base e Ingeniería de Ventas); (b) y (c) pendientes |
 
+| D16 | **EPI versus Inventario**: la entrega de EPI es una salida de bodega, pero QHSE (contenedor `qhse`) no puede tener FK a `inventario.articulo` (contenedor `operaciones`, D1). ¿Cada elemento de EPI es un artículo de Inventario y la entrega genera la salida de kardex, o QHSE lleva su propio control? | **QHSE lleva su propio catálogo** (`epi_elemento` con código estable y tipo de talla) y registra la entrega a una base o bodega de `catalogos.bodega`. Si Dynadrill quiere descontar existencias, se agrega después un evento `qhse.epi.despachada` que Inventario consuma (consumo de bodega) o un `articulo_id` por evento, sin tocar la entrega | QHSE, Inventario | Pendiente |
+
 ## Respuestas del usuario
 
 _(se agregan aquí con fecha, para que todas las sesiones las vean)_

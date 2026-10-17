@@ -128,3 +128,56 @@ En `dynadrill-frontend-platform/src/app/features/flota/`: modelo, servicio `Flot
 ### Decisiones que necesita del usuario
 - Confirmar el manejo de git (rama `modulo/flota` sin `checkout` en el árbol compartido).
 - Las consultas del punto 4 de arriba.
+
+## Hallazgos de la revisión de base de datos (17/10/2026): pulir antes de seguir
+
+Revisado sobre las migraciones `20261016170000_unidades_y_lecturas` y `20261016173000_preventivo_responsable_opcional`.
+
+1. **`unidad_lectura.fuente_id` es un id polimórfico sin FK** (apunta según `fuente` a una inspección, un reporte o un mantenimiento). Reemplácelo por columnas con FK por cada origen (`inspeccion_id`, `reporte_unidad_id`, `preventivo_id`...) y un CHECK de que, según `fuente`, solo la que corresponde esté llena; o una tabla puente por origen. Hasta que existan las tablas de inspecciones, deje la columna sin usar y documentado.
+2. **Las lecturas no son inmutables.** `unidad_lectura` es historia: REVOKE UPDATE, DELETE al rol de la aplicación; una lectura mal tomada se corrige con una lectura nueva y una marca de anulación, no editándola.
+3. **`unidad_preventivo`:** hoy es editable y sin `updated_*`. Decida si es historia (inmutable, igual que las lecturas) o editable (entonces agregue auditoría completa). Los preventivos de la carga inicial sin responsable están bien, pero la carga debe quedar marcada para distinguirlos de los registrados por la aplicación.
+4. **`unidad.tipo` y `categoria_peso` son enums:** confirme con el negocio que no se ampliarán; si Flota debe poder agregar tipos, conviértalos en catálogo.
+5. **Datos de la demo:** confirme que `unidad.codigo` y `unidad.nombre` no repiten lo que ya trae `catalogos.vehiculo` cuando hay `vehiculo_id`; la unidad aporta lo operativo, la matrícula sale del JOIN.
+6. **Permisos de lectura amplios:** `GRANT SELECT` de toda `catalogos.vehiculo` y `tipo_vehiculo`; reduzca a las columnas que usa.
+7. **Falta construir** (con el mismo estándar): F2 inspecciones de vehículos (con sus ítems en tablas, no JSON) y F3 gerenciamiento de viaje; publique `flota.inspeccion_vehiculo.*` y `flota.gerenciamiento_viaje.*` con `source: flota` y pruebe que el consumidor de Pumping los recibe.
+8. **Pruebas:** agregue pruebas que intenten violar el CHECK de `categoria_peso`, el de `ejecutado_por = tercero` sin proveedor y el REVOKE de lecturas.
+
+## Estándar de calidad: base de datos y backend (obligatorio, revisión del 17/10/2026)
+
+El usuario revisa primero la base de datos. Antes de dar un tramo por terminado, verifique cada punto y déjelo anotado en su plan:
+
+1. **Sin datos duplicados.** Un dato vive en un solo lugar y se consulta con JOIN. Si por estar en otro contenedor (D1) debe guardar una referencia, guarde solo el id; si además necesita un texto copiado (código, nombre), justifíquelo por escrito en el plan y en un COMMENT de la columna, y manténgalo actualizado por evento.
+2. **Ningún id sin FK dentro del mismo servidor.** Un id polimórfico sin FK no se acepta: use una columna con FK por cada origen y un CHECK de que solo una esté llena, o una tabla puente. Los ids sin FK solo se admiten entre contenedores distintos y con COMMENT que lo diga.
+3. **Catálogos de verdad.** Valores que el negocio cambia o amplía son tabla con id uuid, código único y FK; valores fijos del sistema son enum de PostgreSQL. Nada de texto libre donde hay un conjunto conocido (tallas, lugares, categorías por nombre). No decida comportamiento comparando textos de nombres en migraciones ni en código: use una columna o un código estable.
+4. **Integridad en la base, no solo en el servicio.** CHECK de coherencia entre columnas, FK compuestas cuando un dato depende de dos tablas, índices únicos parciales para reglas como una vigente por clave, NOT NULL donde corresponde. Si una regla solo la valida el servicio, pregúntese si la base puede garantizarla.
+5. **Historia inmutable.** Kardex, lecturas, historiales y registros firmados: sin UPDATE y sin DELETE para el rol de la aplicación (REVOKE en la migración); los errores se corrigen con un registro nuevo.
+6. **Auditoría uniforme.** `created_at/created_by/updated_at/updated_by` con FK a `identidad.usuario` en toda tabla editable.
+7. **Permisos mínimos.** GRANT SELECT por columnas y solo lo necesario sobre tablas de otros schemas; justifique en un comentario cada dato personal que lea (por ejemplo, cédula).
+8. **Una migración por cambio, reversible por otra migración, sin editar migraciones ya aplicadas.** Los datos sembrados van en la semilla (idempotente), no en la migración, salvo catálogos mínimos del sistema.
+9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
+10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
+11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 14. Cumplimiento de la revisión de base de datos (17/10/2026)
+
+Corregido con la migración nueva `20261017100000_pulir_f1_integridad` (las anteriores no se editaron), más cambios de servicio y pruebas. Pruebas: 9 unitarias y 22 de integración, todas verdes; `eslint` sin errores.
+
+| # | Hallazgo | Resultado |
+|---|---|---|
+| 1 | `fuente_id` polimórfico sin FK | **Corregido**: columna eliminada. El origen de una lectura de mantenimiento ya está en `unidad_preventivo.lectura_id` (FK). Las columnas con FK para inspección (F2) y reporte de unidad se agregan cuando existan esas tablas, con CHECK de «una sola llena». |
+| 2 | Lecturas editables | **Corregido**: `REVOKE UPDATE, DELETE` a `app_operaciones`; tabla `unidad_lectura_anulacion` (solo INSERT, motivo obligatorio ≥ 5 letras, quién y cuándo). La vigente, la historia vigente y la línea de tiempo ignoran las anuladas. No se anula una lectura que respalda un preventivo vigente (409). Endpoint `POST /lecturas/:id/anular`, permiso `flota.lecturas.anular`, evento `flota.unidad.lectura_anulada`. |
+| 3 | `unidad_preventivo` editable | **Decidido: es historia inmutable** (igual que las lecturas): REVOKE, tabla `unidad_preventivo_anulacion`, `POST /preventivos/:id/anular`, permiso `flota.preventivos.anular`, evento `flota.unidad.preventivo_anulado`. Columna `origen` (`carga_inicial` / `aplicacion`) con CHECK: lo registrado por la aplicación siempre lleva responsable. La semilla marca su carga como `carga_inicial`. |
+| 4 | Enums `tipo` y `categoria_peso` | **Se mantienen como enum**: el tipo decide la regla preventiva y la lectura (MAN-002) y la categoría solo existe para los indicadores de Pesado/Liviano; ninguno lo amplía el negocio. Anotado en un COMMENT. **Confirmar con Dynadrill.** |
+| 5 | Duplicados con `catalogos.vehiculo` | **No aplica**: `unidad` no guarda placa, marca, modelo ni año (salen del JOIN por `vehiculo_id`); `codigo` y `nombre` son el código y nombre operativos (PUM-07), que el catálogo no tiene. COMMENT en `nombre`. |
+| 6 | GRANT amplio | **Corregido**: `SELECT` solo de `(id, placa, marca, modelo, anio, tipo_vehiculo_id, habilitado)` en `catalogos.vehiculo` y `(id, nombre)` en `tipo_vehiculo`. Afecta también a Pumping, que usa el mismo usuario (sus columnas están incluidas); registrado. |
+| 8 | Pruebas de reglas de la base | **Hecho**: CHECK de `categoria_peso`, CHECK de tercero sin proveedor y de responsable, FK compuesta de tipo de lectura, REVOKE de UPDATE/DELETE y de la columna `transportista_id`, anulaciones. |
+| extra | Integridad en la base | Nueva columna generada `unidad.tipo_lectura` y FK compuesta `(unidad_id, tipo)` en `unidad_lectura`: el tipo de lectura (horómetro/odómetro) lo garantiza la base, y las auxiliares no admiten lecturas. Lo que sigue validando solo el servicio: que una lectura no baje respecto de la línea de tiempo y que `tipo_servicio` A/B solo exista en unidades de servicio. |
+
+Estándar de calidad, puntos revisados sobre F1: 1 sin duplicados ✔, 2 sin ids sin FK ✔ (tras el punto 1), 3 catálogos ✔ (proveedores y reglas son tablas), 4 integridad en la base ✔, 5 historia inmutable ✔, 6 auditoría ✔ (`created_*` y `updated_*` en `unidad` y `proveedor_mantenimiento`; la historia solo `created_*`), 7 permisos mínimos ✔, 8 migraciones sin editar ✔, 9 backend ✔, 10 pruebas de reglas ✔.
+
+### Pendiente (no iniciado en esta pasada)
+- **Hallazgo 7**: F2 inspecciones de vehículos (ítems en tablas) y F3 gerenciamiento de viaje, con los eventos `flota.inspeccion_vehiculo.*` y `flota.gerenciamiento_viaje.*` y la prueba de que el consumidor de Pumping los recibe. La numeración de tramos del plan cambia: conductores y permisos pasan a F2/F3 según se reordene; sigue pendiente decidirlo.
+- Terminar el frontend de F1 (ficha, rutas, menú, `ng build`/`ng test`) y agregar la anulación de lecturas y mantenimientos en la ficha.
+- `build` del contenedor operaciones y reinicio: lo estaba haciendo la sesión principal (bloqueo `nx.lock`); el código de Flota ya está en el árbol, así que su build lo incluye. Falta verificar a mano `/api/operaciones/flota/unidades` tras ese reinicio.
+- Commits locales en `modulo/flota` (sin hacer; ver sección 13).
+

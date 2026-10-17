@@ -65,3 +65,18 @@
 
 - Backend `desarrollo` (commit `ef20cb5`), documentación `main` (`93e0d4e` más este archivo) y frontend `respaldo` (commit `ee378b1`) ya están en GitHub.
 - El commit del frontend `ee378b1` incluye también el trabajo en curso de las sesiones de Flota, Inventario, QHSE y Mantenimiento (se usó `git add -A`); no hay que deshacerlo, solo tener presente que ese commit mezcla módulos.
+
+## 7. Avance del 17/10/2026 (segunda parte)
+
+**Hecho y probado (base real):**
+- **C7 (Comercial):** `TicketCerradoConsumer` genera la prefactura sola al recibir `operaciones.pumping.cerrado` o `operaciones.fcr.cerrado`; si no se puede, se omite sin fallar; idempotente por el inbox. Las pruebas de comercial suman 105 y pasan; los specs usan el helper `testing/sin-suscripciones.ts` para no suscribirse a RabbitMQ.
+- **Pumping, flujo completo hasta el cierre (P2, P4, P5 y P6 en esqueleto):** transiciones nuevas `revision_reportes_salida` a `ejecucion_operativa`, `ejecucion_operativa` a `control_retorno`, `control_retorno` a `traslado_llegada`, `traslado_llegada` a `revision_reportes_llegada`, `revision_reportes_llegada` a `revision_final`, `revision_final` a `cierre` y el rechazo `revision_final` a `revision_reportes_llegada` (con motivo y sin exigir requisitos: columna nueva `transicion.exige_requisitos`, migración `20261019120000`).
+- Requisitos nuevos: `ejecucion_formalizada`, `reporte_unidad_llegada` (por unidad) y `acta_entrega_locacion` (QHSE, por evento `qhse.acta_entrega.cargada|anulada`).
+- **P3 parcial:** formalización de la ejecución por el Supervisor asignado (`POST /api/operaciones/pumping/tickets/:id/ejecucion/formalizar`, permiso `pumping.ejecucion.formalizar`).
+- **P5:** reporte de unidad de llegada (`PUT .../reportes-unidad/:vehiculoId/llegada`) que publica `operaciones.pumping.reporte_unidad_llegada` con la forma que ya consume Mantenimiento.
+- **Cierre:** al pasar a `cierre` se publica `operaciones.pumping.cerrado`.
+- Prueba de integración que recorre todo el ticket de punta a punta (14 pruebas de Pumping pasan).
+
+**Falta de Pumping** (ver `plan-pumping-restante.md`): P1 químicos y salida de bodega (Inventario ya tiene el kardex), el **Reporte Diario** de P3 con su empuje a Comercial y la corrección de Facturación, P4 cuadre de químicos y herramientas, la inspección de llegada (esperar el contrato de Flota), P6 «Ver prefactura» y firma del Company Man desde el ticket en pantalla, P7, P8 y P9, y **todo el frontend** de los pasos nuevos.
+
+**Pendiente de coordinación:** el reinicio de servicios con el código nuevo (los servicios 3100 a 3103 se levantaron al inicio de la sesión; hay que recompilar y reiniciar para probar lo de Pumping), y los respaldos en GitHub de lo hecho después del commit `ef20cb5`.

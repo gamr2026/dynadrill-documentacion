@@ -48,14 +48,21 @@ Los consume `libs/operaciones/pumping/src/consumers/requisitos-externos.consumer
 
 ## 4. Contratos propuestos (a acordar al construir cada módulo)
 
-### 4.1 Pumping ↔ Inventario (químicos)
-- Al asignar, el Jefe de Base elige **químicos** (artículo, cantidad, unidad) y se registra la **salida de bodega** contra Inventario. Propuesta: Pumping llama por HTTP interno `POST /api/operaciones/inventario/salidas` (mismo contenedor: puede llamar al servicio exportado por `@dyn/inventario`, **sin** importar sus tablas) con `{ ticketId, articuloId, cantidad, motivo }` y recibe `{ salidaId }`; Pumping guarda `salida_id` con FK (mismo contenedor, FK permitida).
-- Evento resultante: `inventario.salida.registrada` (`articuloId`, `cantidad`, `ticketId`, `bodegaId`).
-- Consumo real y devolución (ejecución y control de retorno): `inventario.consumo.registrado` / `inventario.devolucion.registrada`.
+### 4.1 Pumping ↔ Inventario (químicos) — **Vigente desde el 17/10/2026** (servicio de `@dyn/inventario`; lo consume Pumping)
+- **Mismo contenedor, una sola transacción:** Pumping inyecta `MovimientosService` (exportado por `@dyn/inventario`) y llama dentro de **su** `prisma.$transaction` (así la asignación, la salida de stock y los eventos se confirman o se revierten juntos). No usa HTTP ni importa tablas de Inventario.
+- `registrarSalida(tx, { ticketPumpingId, articuloId, bodegaId, cantidad, observacion? }, actor)`: sale de la bodega y queda a cargo del ticket. Rechaza stock insuficiente (409 `STOCK_INSUFICIENTE`) y un ticket que no existe (`TICKET_INVALIDO`).
+- `registrarConsumo(tx, { ticketPumpingId, articuloId, cantidad, observacion? }, actor)`: lo usado en la ejecución; **no mueve stock**. No puede superar lo que el ticket aún tiene a su cargo (`EXCEDE_LO_ASIGNADO`).
+- `registrarDevolucion(tx, { ticketPumpingId, articuloId, bodegaId, cantidad, observacion? }, actor)`: lo no usado vuelve a bodega; tampoco puede superar lo que el ticket tiene a su cargo.
+- `balanceDeTicket(ticketPumpingId, articuloId?)` (y `GET /api/operaciones/inventario/tickets/:ticketId/articulos`): **asignada, usada, devuelta y pendiente** por artículo, calculadas del kardex y del consumo (no se guardan en Pumping). `stockDe(articuloId, bodegaId?)`.
+- Los químicos se listan con `GET /api/operaciones/inventario/articulos?quimicos=true&conStock=true` (categorías con la marca `es_quimica`).
+- **Pumping guarda solo el `ticket_id` (suyo); no necesita guardar `salida_id`**: las salidas del ticket se obtienen de Inventario por `ticket_pumping_id` (FK real a `pumping.ticket`). FCR agregará su columna `ticket_fcr_id` en la misma tabla (ver el registro de cambios).
+- **Eventos** (productor `operaciones`, el sobre exige ese prefijo; **reemplazan** a los `inventario.*` propuestos antes): `operaciones.inventario.salida_registrada` y `operaciones.inventario.devolucion_registrada` (datos: `movimientoId`, `articuloId`, `articuloCodigo`, `bodegaId`, `tipo`, `origen`, `cantidad`, `saldoResultante`, `ticketId`, `despachoId`), `operaciones.inventario.consumo_registrado` (`consumoId`, `articuloId`, `articuloCodigo`, `ticketId`, `cantidad`) y `operaciones.inventario.movimiento_registrado` (cualquier otro movimiento: compra, ajuste, despacho). Un hecho = un evento.
+- **Despachos a bodega:** Inventario consume `comercial.despacho.solicitado` y `comercial.despacho.resuelto` (`pedidoId`; el segundo trae `archivoRespaldoId` y `archivoMsdsId`) y los refleja en `inventario.despacho`; Bodega registra las salidas de stock que lo respaldan.
 
 ### 4.2 Pumping/FCR → Mantenimiento (reporte de unidad de llegada)
 - Al firmar la llegada de la unidad, Pumping publica `operaciones.pumping.reporte_unidad_llegada` con `ticketId`, `vehiculoId`, `reporteUnidadId`, y `hayNovedades` (bool). Mantenimiento crea su **reporte de unidad recibido** (clasificación MAN-001-A) con FK a `pumping.reporte_unidad` (mismo contenedor). Las novedades están en las columnas del reporte; no se copian.
 - FCR publica el equivalente (`operaciones.fcr.reporte_unidad_llegada`) con la misma forma.
+- **Estado (17/10/2026): Mantenimiento ya consume el evento** (`source: 'operaciones'`, `ticketId`, `vehiculoId`, `reporteUnidadId`, `hayNovedades`; el productor lo publica en la misma transacción que firma la llegada). Mantenimiento lee las novedades de `pumping.reporte_unidad` (FK real, mismo contenedor): **Pumping no debe renombrar ni quitar** `novedades_*`, `llegada_firmada_at`, `vehiculo_id` ni `ticket_id` de esa tabla sin avisar por el registro. Para el origen QHSE (otro contenedor, D1) el evento debe traer `casoId` y el texto de la novedad; solo ese texto se copia.
 
 ### 4.3 Mantenimiento → Flota (lecturas de la unidad)
 - Mismo contenedor: Mantenimiento usa el servicio exportado de Flota para **actualizar horómetro/kilometraje** y registrar el mantenimiento preventivo (A/B, 5.000 km, 6 meses). Flota es dueña de `unidad` y de sus lecturas; nadie más escribe esas columnas.
