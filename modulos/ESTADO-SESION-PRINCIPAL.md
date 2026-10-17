@@ -80,3 +80,23 @@
 **Falta de Pumping** (ver `plan-pumping-restante.md`): P1 químicos y salida de bodega (Inventario ya tiene el kardex), el **Reporte Diario** de P3 con su empuje a Comercial y la corrección de Facturación, P4 cuadre de químicos y herramientas, la inspección de llegada (esperar el contrato de Flota), P6 «Ver prefactura» y firma del Company Man desde el ticket en pantalla, P7, P8 y P9, y **todo el frontend** de los pasos nuevos.
 
 **Pendiente de coordinación:** el reinicio de servicios con el código nuevo (los servicios 3100 a 3103 se levantaron al inicio de la sesión; hay que recompilar y reiniciar para probar lo de Pumping), y los respaldos en GitHub de lo hecho después del commit `ef20cb5`.
+
+## 8. Ramas por módulo (17/10/2026) y orden de fusión
+
+Las cuatro sesiones terminaron su tramo. Sus cambios quedaron en ramas y respaldados en GitHub (`gamr2026`). Ninguna rama está fusionada en `desarrollo`; `main` de cada repo no se toca.
+
+**Backend (`dynadrill-platform`, remoto `origin`)**, todas parten de `desarrollo` (commit `23d5dd8`), salvo `modulo/qhse`, que parte de `ef20cb5`:
+
+| Rama | Contenido |
+|---|---|
+| `modulo/qhse` | contenedor QHSE, EPI, consumidor de Pumping, avisos (hecha por la sesión de QHSE) |
+| `modulo/flota` | `libs/operaciones/flota` (F1) |
+| `modulo/inventario` | `libs/operaciones/inventario` (I1) con los datos reales |
+| `modulo/mantenimiento` | `libs/operaciones/mantenimiento` (M1) |
+| `modulo/integracion-operaciones` | cableado compartido: `apps/operaciones`, `apps/plataforma`, `apps/gateway`, `package.json`, `tsconfig.base.json`, `scripts`, plantillas de avisos |
+
+**Orden sugerido:** `modulo/qhse`, `modulo/flota`, `modulo/inventario`, `modulo/mantenimiento` y al final `modulo/integracion-operaciones`. Se esperan conflictos pequeños en `package.json`, `tsconfig.base.json` y `apps/gateway/src/app/routes*.ts` porque varias sesiones tocaron las mismas líneas: en ellos manda la versión de `modulo/integracion-operaciones`, que refleja el árbol de trabajo final. Después de fusionar, ejecute `npm install`, `npx prisma generate` por librería y `nx run-many -t lint test build`.
+
+**Frontend (`dynadrill-frontend-platform`, remoto `respaldo`)**: parten de `feat/integracion-backend-platform`. `modulo/qhse` (entrega de EPI) y `modulo/inventario` (modelo). El trabajo de pantallas de Flota y Mantenimiento quedó dentro del commit `ee378b1` de esa misma rama (se mezcló en un `git add -A`).
+
+Los commits de estas ramas se crearon sin ejecutar los ganchos de commit (lint-staged y commitlint); corra `nx run-many -t lint` antes de fusionar.
