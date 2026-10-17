@@ -100,3 +100,22 @@ Las cuatro sesiones terminaron su tramo. Sus cambios quedaron en ramas y respald
 **Frontend (`dynadrill-frontend-platform`, remoto `respaldo`)**: parten de `feat/integracion-backend-platform`. `modulo/qhse` (entrega de EPI) y `modulo/inventario` (modelo). El trabajo de pantallas de Flota y Mantenimiento quedó dentro del commit `ee378b1` de esa misma rama (se mezcló en un `git add -A`).
 
 Los commits de estas ramas se crearon sin ejecutar los ganchos de commit (lint-staged y commitlint); corra `nx run-many -t lint` antes de fusionar.
+
+## 9. Revisión y fusión (17/10/2026)
+
+**Revisión por módulo (migraciones aplicadas y leídas contra los hallazgos):** Flota, Inventario, Mantenimiento y QHSE corrigieron sus hallazgos con migraciones nuevas (`pulir_f1_integridad`, `pulir_revision_bd` y `ver_id_de_archivos`, `catalogos_con_id_auditoria_y_repuestos`, `epi_catalogos_integridad_y_auditoria`). Las cuatro bases quedaron al día (`prisma migrate status`). Puntos destacables: lecturas y consumos inmutables, FK compuestas, triggers que impiden cambiar una entrega de EPI despachada, ids sin FK reemplazados por columnas con FK dentro del contenedor.
+**Sobre «QHSE no puede tener FK a artículo»:** es la regla D1 (sin FK entre contenedores; QHSE es otro contenedor con su propio rol de base de datos), no una imposibilidad técnica. QHSE dejó su propio catálogo de elementos y lo anotó como **D16**, que sigue **pendiente** de decisión del usuario.
+
+**Lint y commitlint:** commitlint sin errores en todas las ramas. El gancho de commit solo ejecuta prettier: se formateó cada rama con un commit `style:` (Flota, Mantenimiento, QHSE e integración tenían archivos sin formatear; Inventario no). El frontend no tiene gancho ni commitlint (su base tampoco está formateada con prettier: no se tocó).
+
+**Fusión en `desarrollo` (backend), en orden:** `modulo/qhse`, `modulo/flota`, `modulo/inventario`, `modulo/mantenimiento`, `modulo/integracion-operaciones`, sin conflictos. Frontend: `modulo/qhse` y `modulo/inventario` en `feat/integracion-backend-platform`.
+
+**Verificación del árbol fusionado:** `nx run-many -t lint test build` sobre los 21 proyectos con `RUN_INTEGRATION=1` y base real: todo en verde; frontend `ng build` y 352 pruebas en verde.
+
+**Hallazgos corregidos durante la revisión (no eran de la sesión que los dejó):**
+- Frontend de Flota: la ficha de unidad (`unidad-detail-page`) no tenía plantilla ni estilos (el build fallaba). Se escribieron `unidad-detail-page.html` y `.scss` a partir del componente. **Conviene que Flota la revise** (diseño y textos).
+- `archivos.service.ts`: el comentario de `eslint-disable` quedó mal ubicado tras el formato; se movió.
+- `apps/comercial/src/assets` y `apps/operaciones/src/assets` no estaban versionadas y los builds fallaban en una copia limpia: se agregaron con `.gitkeep`.
+- Datos de prueba residuales (2 clientes y 2 pozos `IT`) de una corrida fallida de mis pruebas: eliminados.
+
+**Copias de seguridad:** quedan dos stash (`dynadrill-platform` y el frontend, «respaldo ... antes de fusionar») con el árbol de trabajo anterior; todo su contenido ya está en las ramas. Pueden borrarse cuando el usuario lo confirme.
