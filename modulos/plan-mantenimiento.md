@@ -170,5 +170,14 @@ La demo pide el repuesto usado como **texto libre**. Con el reporte de AS2 ya es
 MANTENIMIENTO, marca `es_repuesto`). En M2 (ejecución de la sub-orden) el operador de mantenimiento **elige el repuesto del catálogo**:
 `GET /api/operaciones/inventario/articulos?repuestos=true&q=<texto>` (permiso `inventario.articulos.ver`), y se guarda en
 `suborden_repuesto.articulo_id` (FK real: mismo contenedor) con la cantidad. Si el repuesto no existe en el catálogo se permite el texto
-(`numero_parte` + descripción) como respaldo, y Bodega puede darlo de alta después. Pendiente de decidir: si usar un repuesto genera una **salida
-de bodega** del kardex (hoy el catálogo viene sin saldos).
+(`numero_parte` + descripción) como respaldo, y Bodega puede darlo de alta después. Decidido por el usuario (17/10/2026): usar un repuesto del catálogo **sí** genera una salida de
+bodega del kardex.
+
+### Hecho (17/10/2026, sesión principal): repuestos con salida de bodega + ejecución y cierre de la sub-orden
+
+Contrato completo en `02-CONTRATOS-ENTRE-MODULOS.md` (4.1-bis). Resumen:
+- Backend: `EjecucionService` (`guardarAvance`, `enviarARevision`, `aprobarCierre`, `solicitarCorreccion`) y endpoints `GET subordenes/:id`, `PUT subordenes/:id/avance`, `POST subordenes/:id/enviar-revision|aprobar-cierre|solicitar-correccion`. Los pasos pasan por la tabla `transicion_suborden` (no hay `if` de estados sueltos).
+- Base: migración `20261021100000_repuestos_con_bodega_y_salida`. Renglón de catálogo (artículo + bodega) o de texto, nunca mezclados; `movimiento_id` con FK al kardex; trigger que protege el renglón con salida.
+- La salida sale al **aprobar el cierre** (no al guardar): así cambiar o quitar un repuesto antes de la aprobación no obliga a devoluciones en un kardex inmutable. Stock insuficiente → 409 y la sub-orden sigue en revisión; el Jefe la devuelve con una corrección o Bodega repone.
+- Frontend: el diálogo de ejecución (`suborder-execution-dialog`) ya trae el buscador del catálogo, la bodega con existencias y el repuesto «sin código en Inventario». Sigue guardando por el servicio de la demo: **falta el adaptador** de todo Mantenimiento al backend nuevo (ids uuid, `PUT subordenes/:id/avance`, un solo `repuestos` con `articuloId`/`bodegaId`).
+- Pendiente de M2: derivar a Pumping y reasignar, retorno a operación y cierre de la orden, eventos con plantilla de aviso (M4).

@@ -48,6 +48,13 @@ Los consume `libs/operaciones/pumping/src/consumers/requisitos-externos.consumer
 
 ## 4. Contratos propuestos (a acordar al construir cada módulo)
 
+### 4.1-bis Mantenimiento ↔ Inventario (repuestos) — **Vigente desde el 17/10/2026**
+- **Selector:** `GET /api/operaciones/inventario/articulos/repuestos?q=<texto>` (mínimo 2 letras; máximo 30 resultados): artículos activos de las categorías con `es_repuesto`, con la existencia por bodega (solo bodegas con saldo).
+- **Guardar el repuesto:** `suborden_repuesto` es **de catálogo** (`articulo_id` + `bodega_id`, sin texto: el código y el nombre se leen con JOIN) o **de texto** (`numero_parte` + `descripcion`, cuando no existe en Inventario). La base lo exige con un CHECK. Guardar el avance NO mueve stock.
+- **Salida de bodega:** al aprobar el cierre el Jefe, Mantenimiento llama a `MovimientosService.registrarSalidasDeMantenimiento(lineas, actor)` con una línea por renglón de catálogo (`subordenRepuestoId` como llave de idempotencia). Inventario las registra en **una** transacción suya (todas o ninguna; stock insuficiente → 409 y no cambia nada), con el motivo del sistema «Consumo en mantenimiento» (origen `consumo_mantenimiento`), y devuelve el movimiento de cada línea. Después Mantenimiento cierra la sub-orden y guarda `movimiento_id` en cada renglón (FK a `inventario.movimiento`). Si el cierre se interrumpe entre una cosa y la otra, se repite: no se duplica la salida.
+- **Por qué no es una sola transacción:** cada módulo tiene su cliente Prisma; no pueden compartir `tx`. La dependencia de FK va Mantenimiento → Inventario; por eso `inventario.salida_mantenimiento.suborden_repuesto_id` es un uuid sin FK (solo llave de idempotencia, con COMMENT).
+- Un renglón con salida registrada no se puede cambiar ni borrar (trigger en la base).
+
 ### 4.1 Pumping ↔ Inventario (químicos) — **Vigente desde el 17/10/2026** (servicio de `@dyn/inventario`; lo consume Pumping)
 - **Mismo contenedor, una sola transacción:** Pumping inyecta `MovimientosService` (exportado por `@dyn/inventario`) y llama dentro de **su** `prisma.$transaction` (así la asignación, la salida de stock y los eventos se confirman o se revierten juntos). No usa HTTP ni importa tablas de Inventario.
 - `registrarSalida(tx, { ticketPumpingId, articuloId, bodegaId, cantidad, observacion? }, actor)`: sale de la bodega y queda a cargo del ticket. Rechaza stock insuficiente (409 `STOCK_INSUFICIENTE`) y un ticket que no existe (`TICKET_INVALIDO`).

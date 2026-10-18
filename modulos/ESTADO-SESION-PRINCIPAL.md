@@ -153,3 +153,13 @@ Pendiente: que Mantenimiento (M2) use el selector de repuestos; proveedor y marc
 
 Con el reporte «Stock» por bodega de AS2 (17/10/2026) el kardex de Inventario quedó con el **stock real**: 964 saldos iniciales, 11 ajustes por sobrante, 58 por faltante y 46 llevados a cero (el stock cargado de la demo estaba en una sola bodega y desactualizado), en 6 bodegas (se agregaron Suministros y Mantenimiento y EPP a `catalogos.bodega`). Se corrigieron las unidades de stock de 76 artículos. El costo unitario sale del **último costo de ingreso** del kardex de AS2 (decisión del usuario; 59 artículos sin costo lo recibieron). El historial de 48 mil movimientos del kardex de AS2 **no** se importó. Quedó fuera 1 renglón (CT-ON, ambiguo; el usuario decidió dejarlo). Los 5 overoles con nombre de persona entraron como «OVEROL BORDADO», sin el nombre (EPP: 63 artículos, 42 de entrega personal). Detalle en `libs/operaciones/inventario/prisma/data/README.md`.
 Decidido por el usuario: no se importa el historial del kardex y `CT-ON` se deja fuera hasta que el cliente lo pida.
+
+## 13. Mantenimiento: repuestos con salida de bodega (17/10/2026)
+
+Por decisión del usuario: Mantenimiento elige el repuesto del catálogo de Inventario y **sí** genera salida de bodega.
+
+- **Inventario:** origen `consumo_mantenimiento`, motivo «Consumo en mantenimiento», tabla inmutable `salida_mantenimiento` (idempotencia), `registrarSalidasDeMantenimiento`, y `GET articulos/repuestos?q=` (selector con existencia por bodega). Hay que correr `npm run db:seed:inventario` para crear el motivo nuevo (ya corrido en desarrollo).
+- **Mantenimiento:** `suborden_repuesto` de catálogo o de texto (CHECK), con bodega y `movimiento_id`; ejecución completa de la sub-orden (avance, revisión, aprobación, corrección). La salida se registra al aprobar el cierre; si no alcanza el stock el cierre se rechaza sin cambiar nada.
+- **Atomicidad:** Mantenimiento e Inventario no pueden compartir transacción (clientes Prisma distintos). Se resolvió con salida idempotente por renglón (si se interrumpe, se repite el cierre). El contrato 4.1 de Pumping dice «dentro de su transacción»: **no es realizable** tal como está escrito; queda avisado en el registro de cambios.
+- **Frontend:** buscador del catálogo en el diálogo de ejecución. Falta el adaptador de todo Mantenimiento al backend nuevo.
+- **Pruebas:** Mantenimiento 36 (6 nuevas de M2 más las reglas de base), Inventario 43, frontend 353; lint y build en verde.
