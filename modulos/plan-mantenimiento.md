@@ -163,3 +163,12 @@ Migración nueva `20261017100000_catalogos_con_id_auditoria_y_repuestos` (aplica
 Verificación del estándar de calidad: (1) sin datos duplicados, salvo la excepción 2; (2) sin id sin FK en el mismo contenedor; (3) catálogos con id y códigos estables, sin comparar nombres; (4) CHECK de origen, de descarte, de retorno, de asignación y de cierre, índices únicos (un reporte de Pumping se recibe una vez, un tipo por orden, una parte por sub-orden); (5) sin historia propia todavía: el historial de M3 nacerá sin UPDATE/DELETE para `app_operaciones` (hoy la aplicación ya **no puede borrar** reportes ni órdenes, probado); (6) auditoría uniforme; (7) lectura de maestros solo por columnas (`identidad.usuario`: id, nombre, correo, activo, rol; ningún dato personal sensible); (8) una migración por cambio; (9)-(10) pruebas que intentan violar CHECK, FK y permisos y esperan el rechazo.
 
 Pendiente de revisión por el usuario: ver decisiones en el mensaje final (colas de RabbitMQ, numeración, git).
+
+## Repuestos desde Inventario (17/10/2026, decisión del usuario)
+
+La demo pide el repuesto usado como **texto libre**. Con el reporte de AS2 ya están cargados en Inventario **653 repuestos y suministros** (categoría
+MANTENIMIENTO, marca `es_repuesto`). En M2 (ejecución de la sub-orden) el operador de mantenimiento **elige el repuesto del catálogo**:
+`GET /api/operaciones/inventario/articulos?repuestos=true&q=<texto>` (permiso `inventario.articulos.ver`), y se guarda en
+`suborden_repuesto.articulo_id` (FK real: mismo contenedor) con la cantidad. Si el repuesto no existe en el catálogo se permite el texto
+(`numero_parte` + descripción) como respaldo, y Bodega puede darlo de alta después. Pendiente de decidir: si usar un repuesto genera una **salida
+de bodega** del kardex (hoy el catálogo viene sin saldos).

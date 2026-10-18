@@ -143,3 +143,8 @@ Los commits de estas ramas se crearon sin ejecutar los ganchos de commit (lint-s
 
 En Inventario y no en AS2: 48 herramientas del registro de inspección (esperado). El reporte no trae costo, saldo ni bodega: solo código, nombre, nombre comercial, marca y proveedor. 97 nombres se repiten en AS2.
 **Decisiones pendientes del usuario:** si se cargan los ~1.269 productos faltantes de bienes (químicos, completion, fishing, mantenimiento); qué hacer con los 117 códigos de químicos con espacios (hoy el alta de artículos los rechaza: «el código no puede llevar espacios»); si MANTENIMIENTO (repuestos) va a Inventario.
+
+## 11. Bienes de AS2 y repuestos en Inventario (17/10/2026)
+
+Por decisión del usuario se cargaron los **1.268 productos de bienes** que faltaban (químicos 342, completion 98, fishing consumo 129, fishing & tools 46 y **653 repuestos y suministros de mantenimiento**); los servicios y conceptos contables **no** son inventario. Los códigos con espacios se **normalizaron** (103 del archivo y 78 de la carga inicial; el original queda como equivalencia; 3 colisiones resueltas con sufijo `-2`). La categoría de repuestos lleva la marca `es_repuesto` y Mantenimiento los ofrece con `GET .../articulos?repuestos=true` (hoy la demo usa texto libre). Inventario tiene ahora **2.015 artículos**. Detalle: `libs/operaciones/inventario/prisma/data/README.md`.
+Pendiente: que Mantenimiento (M2) use el selector de repuestos; proveedor y marca no se cargaron; clasificar con Dynadrill los 37 EPP de entrega personal; decidir si un repuesto usado genera salida de bodega.
