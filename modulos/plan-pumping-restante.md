@@ -71,7 +71,25 @@ Pasos existentes en la base: `revision_inicial` y `asignacion` (hechos), `trasla
 
 **No portado del Reporte Diario de la demo (decisiones pendientes):** descargar o cargar la plantilla Excel DYN-SGI-RE-047 (y la hoja «Tablas»), el documento de monitoreo por día, las firmas dibujadas del supervisor y del cliente, y el archivo adjunto. Los documentos del ticket (monitoreo, ART y PT) siguen pendientes.
 
-- **Pendiente del frontend de Pumping:** solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
+### Hecho el 18/10/2026 (sesión principal): P7, P8 y el monitoreo por día
+
+**P7 Cambio de ítems del pedido** (contrato 4.13).
+- **Pumping:** tablas `solicitud_cambio_items` y `solicitud_cambio_item` (migración `20261021130000`): estado (pendiente, aprobada, rechazada), motivo, quién y cuándo propuso y revisó, y `aplicacion` (pendiente, aplicada, no aplicada) con su motivo; una sola pendiente por ticket; los ítems propuestos son historia (sin UPDATE ni DELETE). Los ítems guardan el id de la lista de precios de Comercial **sin FK** (otro contenedor) y copian código y descripción solo para mostrarlos; el precio **no** se copia.
+- **Endpoints:** `POST tickets/:id/cambios-items` (el equipo del ticket, permiso `pumping.cambios_items.solicitar`; propone la lista COMPLETA que debe quedar), `GET tickets/:id/cambios-items`, `GET cambios-items/pendientes` (bandeja del Supervisor), `POST cambios-items/:id/aprobar` y `.../rechazar` (solo el Supervisor del ticket o Superadmin, permiso `pumping.cambios_items.aprobar`).
+- **Comercial:** `GET /api/comercial/pedidos/:pedidoId/items-para-cambio?q=` (ítems actuales y, con 2 letras o más, hasta 30 de la lista de precios activa del cliente; sin precios), y consume `operaciones.pumping.cambio_items_aprobado`: reemplaza los ítems con los precios de su lista (los ítems sin enlace a la lista, los de AS2, se conservan al final), solo mientras el pedido es editable y ya está abierto, recalcula la prefactura si está «generada» y responde `comercial.cambio_items.resultado` (aplicado o por qué no). Pumping lo guarda en la solicitud.
+- **Pantalla (`tickets-nuevos`):** tarjeta «Cambios de ítems del pedido» en el ticket (proponer, ver, revisar con el cambio frente a lo que tiene el pedido hoy, y el resultado de Comercial); diálogo para proponer con búsqueda en la lista del cliente; bandeja de **Aprobaciones** del Supervisor (ruta `pedidos/aprobaciones`, botón en la bandeja de pedidos). La pantalla vieja de aprobaciones (contra la demo) sigue sin tocarse.
+- Pruebas: Pumping 32 (con las de este bloque), Pedidos 109; frontend 384.
+
+**P8 Tarjeta «Mantenimientos»** en el ticket nuevo: `GET /api/operaciones/mantenimiento/tickets/:ticketId/ordenes` trae las órdenes de las unidades del ticket (la unidad del ticket es un vehículo del catálogo; la de Mantenimiento, su unidad de Flota enlazada por `flota.unidad.vehiculo_id`, D2). La tarjeta existente (`ticket-maintenance-card`) recibe `ticketId` y reutiliza los diálogos de ejecución y revisión; se ve para quien puede leer Mantenimiento. Pruebas: Mantenimiento 38.
+
+**Monitoreo por día** (documento del ticket): `ticket_documento` suma el tipo `monitoreo` y su `fecha` (CHECK: solo el monitoreo lleva fecha); `GET tickets/:id/documentos` y `POST tickets/:id/documentos/monitoreo` (`{fecha, archivoId}`; el Operador del equipo en la Ejecución operativa; varios por día, el último es el vigente). Módulo de archivos `ticket_monitoreo_documento` (correr `npm run db:seed:archivos`). En el ticket: «Adjuntar monitoreo» y «Descargar monitoreo» en cada día del reporte diario. También se endureció la validación de fechas (el 31 de febrero ya no pasa).
+
+**Sigue pendiente de Pumping (depende de otros módulos o de una decisión):**
+- **Inspección de llegada y gerenciamiento de viaje (P9):** son de Flota, que aún no construye la inspección ni el gerenciamiento; los requisitos ya existen y se confirman con el puente.
+- **ART y PT del día:** son documentos de QHSE (`documento_pedido`), que aún no existen.
+- **Herramientas del cuadre (P4):** hoy el cuadre cubre químicos; para herramientas falta definir con Dynadrill de dónde salen (consulta abierta).
+
+- **Pendiente del frontend de Pumping:** lo de Flota y QHSE de arriba; la pantalla vieja del ticket (demo) se retira en el Corte. Antes de ese bloque se anotaba: solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
 - **Sigue pendiente:** P3 Reporte Diario completo y documentos del ticket (monitoreo, ART, PT), P4 herramientas, inspección de llegada, P6 pantalla, P7, P8, P9 y **todo el frontend de Pumping** (la pantalla del ticket sigue contra la demo).
 
 ## 2. Qué hay en la demo
