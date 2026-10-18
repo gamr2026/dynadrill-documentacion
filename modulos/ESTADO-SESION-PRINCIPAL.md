@@ -169,3 +169,9 @@ Por decisión del usuario: Mantenimiento elige el repuesto del catálogo de Inve
 - Backend: órdenes con sub-órdenes completas y `POST ordenes/:id/retornar` (Mantenimiento 37 pruebas).
 - Frontend: servicio y traductor nuevos, `MaintenanceOrdersService`/`UnitReportsService` contra `/api/operaciones/mantenimiento`, ids UUID, selector de repuestos y mensajes del backend. 368 pruebas, `ng build` verde.
 - Pendiente en esta área: preventivo, historial, KPIs e inspecciones siguen en la demo (faltan M3/M4 del backend); reclasificar novedades queda apagado; falta probar el flujo completo en el navegador con una cuenta real (el superadmin de desarrollo no inicia sesión: la clave del `.env` ya no coincide).
+
+## 15. Pumping: químicos del ticket (18/10/2026)
+
+- Backend de P1 (asignar con químicos y documento de mezcla, con salida de bodega real), consumo (P3) y devolución (P4) listos y probados (Pumping 18 pruebas, Inventario 43). Servicio de operaciones reiniciado con el código nuevo.
+- Se corrigió el contrato 4.1: la «transacción única» no es posible entre módulos; se usa la transacción de Inventario con devolución compensatoria.
+- **Falta de Pumping:** frontend (la pantalla del ticket y la asignación siguen contra la demo; hay que adaptarlas como se hizo con Mantenimiento), Reporte Diario y documentos del ticket, herramientas, inspección de llegada, P6 en pantalla, P7, P8, P9.

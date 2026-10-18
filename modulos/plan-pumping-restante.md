@@ -31,6 +31,17 @@ Pasos existentes en la base: `revision_inicial` y `asignacion` (hechos), `trasla
 | **P8 — Tarjeta «Mantenimientos»** | Tarjeta lateral con las sub-órdenes de la unidad, sin bloquear | Mantenimiento |
 | **P9 — Consulta del gerenciamiento de viaje** | El ticket muestra el estado de los gerenciamientos de viaje de sus unidades | Flota |
 
+### Hecho el 18/10/2026 (sesión principal): P1 químicos y el ciclo de químicos de P3/P4
+
+- **Asignar con químicos:** `POST /api/operaciones/pumping/tickets/:id/asignar` acepta `quimicos: [{articuloId, bodegaId, cantidad}]` y `documentoMezclaId` (archivo de `archivos`; **obligatorio si hay químicos**, 400 `MEZCLA_REQUERIDA`). Los químicos salen de bodega a cargo del ticket (solo artículos de categorías con `es_quimica`: 409 `ARTICULO_NO_QUIMICO`; stock insuficiente: 409 y no cambia nada). El documento queda en `pumping.ticket_documento` (tipo `mezcla_quimica`, FK a `archivos.archivo`, inmutable). Migración `20261021110000_documentos_del_ticket`.
+- **Atomicidad:** ver contrato 4.1 (transacción propia de Inventario y devolución compensatoria; probada simulando una falla después de la salida).
+- **Consumo (P3):** `POST tickets/:id/quimicos/consumo` `{articuloId, cantidad}`; solo en *Ejecución operativa* y por el equipo asignado; no mueve stock; no puede superar lo que el ticket tiene a su cargo.
+- **Devolución (P4):** `POST tickets/:id/quimicos/devolucion` `{lineas:[{articuloId,bodegaId,cantidad}]}`; solo en *Control de retorno* y por el Supervisor del equipo; no puede devolver más de lo pendiente.
+- **Consulta:** `GET tickets/:id/quimicos` devuelve, por químico, asignada, usada, devuelta y pendiente (calculadas del kardex en Inventario; Pumping no guarda cantidades) y los documentos del ticket.
+- **Decisión:** el control de retorno **no exige** que el pendiente quede en cero para avanzar (la demo solo pide cuadrar); si Dynadrill lo pide se agrega como requisito.
+- Pruebas: 18 de integración (4 nuevas).
+- **Sigue pendiente:** P3 Reporte Diario completo y documentos del ticket (monitoreo, ART, PT), P4 herramientas, inspección de llegada, P6 pantalla, P7, P8, P9 y **todo el frontend de Pumping** (la pantalla del ticket sigue contra la demo).
+
 ## 2. Qué hay en la demo
 
 - Backend: `dynadrill-backend/libs/domains/operaciones/src/pumping-tickets` (≈ 1.400 líneas), `solicitudes-cambio-items` (≈ 220), `workflow` (mapas rol↔paso).
