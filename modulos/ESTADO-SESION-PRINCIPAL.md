@@ -175,3 +175,4 @@ Por decisión del usuario: Mantenimiento elige el repuesto del catálogo de Inve
 - Backend de P1 (asignar con químicos y documento de mezcla, con salida de bodega real), consumo (P3) y devolución (P4) listos y probados (Pumping 18 pruebas, Inventario 43). Servicio de operaciones reiniciado con el código nuevo.
 - Se corrigió el contrato 4.1: la «transacción única» no es posible entre módulos; se usa la transacción de Inventario con devolución compensatoria.
 - **Falta de Pumping:** frontend (la pantalla del ticket y la asignación siguen contra la demo; hay que adaptarlas como se hizo con Mantenimiento), Reporte Diario y documentos del ticket, herramientas, inspección de llegada, P6 en pantalla, P7, P8, P9.
+- (18/10/2026) Frontend de químicos del ticket hecho en `tickets-nuevos` (asignación con químicos y mezcla, tarjeta, consumo, devolución, formalizar). Falta el resto de los pasos en pantalla (ver `plan-pumping-restante.md`).

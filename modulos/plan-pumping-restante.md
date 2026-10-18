@@ -39,7 +39,15 @@ Pasos existentes en la base: `revision_inicial` y `asignacion` (hechos), `trasla
 - **Devolución (P4):** `POST tickets/:id/quimicos/devolucion` `{lineas:[{articuloId,bodegaId,cantidad}]}`; solo en *Control de retorno* y por el Supervisor del equipo; no puede devolver más de lo pendiente.
 - **Consulta:** `GET tickets/:id/quimicos` devuelve, por químico, asignada, usada, devuelta y pendiente (calculadas del kardex en Inventario; Pumping no guarda cantidades) y los documentos del ticket.
 - **Decisión:** el control de retorno **no exige** que el pendiente quede en cero para avanzar (la demo solo pide cuadrar); si Dynadrill lo pide se agrega como requisito.
-- Pruebas: 18 de integración (4 nuevas).
+- Selector de químicos para la asignación: `GET /api/operaciones/inventario/articulos/quimicos?q=` (permisos `inventario.articulos.ver` o `pumping.tickets.operar`): solo químicos con existencia, con el saldo por bodega. El balance del ticket trae además las bodegas de las que salió cada químico (a ellas se devuelve). Módulo de archivos nuevo `ticket_mezcla_documento` (hay que correr `npm run db:seed:archivos`; ya corrido en desarrollo).
+- Pruebas: 19 de integración (5 nuevas).
+
+### Hecho el 18/10/2026 (sesión principal): frontend de los químicos en las pantallas nuevas del ticket (`operations/pumping/tickets-nuevos`, ruta `pedidos/:id`)
+
+- **Asignar equipo:** el diálogo trae «Químicos (opcional)»: químico (solo con existencia), bodega con su saldo, cantidad y el documento de mezcla (obligatorio si hay químicos; se sube a `archivos` y luego se asigna). Los errores del archivo y de la asignación se muestran por separado.
+- **Detalle del ticket:** tarjeta «Químicos del ticket» (asignado, usado, devuelto y a cargo del ticket); «Registrar consumo» (Operador del equipo, en Ejecución operativa) y «Devolver a bodega» (Supervisor del equipo, en Control de retorno); botón «Formalizar ejecución» para el Supervisor.
+- Pruebas: 372 en el frontend; `ng build` verde.
+- **Pendiente del frontend de Pumping:** revisión de reportes de salida (P2), reporte de unidad de llegada y revisión final/cierre (P5 y P6, con «Ver prefactura» y la firma del Company Man), Reporte Diario, solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
 - **Sigue pendiente:** P3 Reporte Diario completo y documentos del ticket (monitoreo, ART, PT), P4 herramientas, inspección de llegada, P6 pantalla, P7, P8, P9 y **todo el frontend de Pumping** (la pantalla del ticket sigue contra la demo).
 
 ## 2. Qué hay en la demo
