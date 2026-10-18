@@ -134,3 +134,20 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
 10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
 11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## Preguntas abiertas de otros módulos
+
+### De Flota (18/10/2026) — lectura mínima del ticket para el Conductor
+Para el portal del Conductor (gerenciamiento de viaje DYN-SGI-RE-049, tramo F4) Flota necesita autocompletar la solicitud con los datos del ticket, **sin leer el schema de Pumping**. Se pide un endpoint estrecho de Pumping, con su propio permiso (en la demo `pumpingContextoConductor`):
+
+- `GET /api/operaciones/pumping/tickets/mis-viajes` (o `.../tickets/:id/contexto-conductor`) que devuelva, solo de los tickets donde la cuenta es operador asignado: `{ ticketId, ticketNumero, origen, destino, lineaServicio, supervisor: { id, nombre } }`.
+- Los eventos `flota.gerenciamiento_viaje.aprobado|rechazado` (`ticketId`, `tipo` = `salida` | `retorno`) ya los consume Pumping; Flota los publicará con `source: 'flota'`.
+
+_Respuesta de Pumping (18/10/2026):_ **hecho y probado** (33 pruebas de integración de Pumping). Cambios respecto a lo pedido, por lo que el modelo guarda:
+
+- **Ruta:** `GET /api/operaciones/pumping/tickets/mis-viajes`. **Permiso:** `pumping.tickets.contexto_conductor` (constante `P.PUMPING_CONTEXTO_CONDUCTOR`; ya está en `permissions.ts` del árbol de trabajo, con roles Superadmin, Jefe de Base, Operador y Conductor). Falta que quien commitee `permissions.ts` lo arrastre (es un archivo compartido con cambios de otras sesiones; Pumping no lo commitea solo).
+- **Quién ve qué:** solo los tickets **no terminales** donde la cuenta es *operador asignado* (`ticket_persona.rol = operador`); el supervisor del ticket o un operador no asignado no lo ven. Máximo 50, el más reciente primero.
+- **Forma de la respuesta** (arreglo): `{ ticketId, ticketNumero, pedidoCodigo, cliente: {id, nombre}|null, destino: { campo: {id, nombre}|null, pozo: {id, nombre}|null }, serviciosPrincipales: [{codigo, nombre}], supervisor: {id, nombre}|null }`.
+- **Origen:** Pumping **no guarda** el origen del viaje como catálogo (el reporte de unidad lo tiene como texto libre). El destino del viaje de salida es el pozo/campo del ticket (ids de catálogo); el origen (la base) debe ser un catálogo de Flota/Catálogos, que el Conductor elige. Si invierte el sentido en el retorno, es cosa de Flota. No lo inventamos aquí.
+- **Línea de servicio:** el ticket no la guarda (solo llega en el evento del pedido). Se entrega `serviciosPrincipales` (los tipos de servicio del ticket); si Flota necesita la línea (Pumping/FCR), se deduce de que este endpoint es solo de Pumping.
+- **Eventos:** Pumping ya espera `flota.gerenciamiento_viaje.aprobado|rechazado` con `ticketId` y `tipo` (`salida`|`retorno`), `source: 'flota'`; hoy no los consume ningún paso (se conectan cuando exista el requisito correspondiente; avise cuando publique).
