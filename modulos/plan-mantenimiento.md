@@ -180,4 +180,15 @@ Contrato completo en `02-CONTRATOS-ENTRE-MODULOS.md` (4.1-bis). Resumen:
 - Base: migración `20261021100000_repuestos_con_bodega_y_salida`. Renglón de catálogo (artículo + bodega) o de texto, nunca mezclados; `movimiento_id` con FK al kardex; trigger que protege el renglón con salida.
 - La salida sale al **aprobar el cierre** (no al guardar): así cambiar o quitar un repuesto antes de la aprobación no obliga a devoluciones en un kardex inmutable. Stock insuficiente → 409 y la sub-orden sigue en revisión; el Jefe la devuelve con una corrección o Bodega repone.
 - Frontend: el diálogo de ejecución (`suborder-execution-dialog`) ya trae el buscador del catálogo, la bodega con existencias y el repuesto «sin código en Inventario». Sigue guardando por el servicio de la demo: **falta el adaptador** de todo Mantenimiento al backend nuevo (ids uuid, `PUT subordenes/:id/avance`, un solo `repuestos` con `articuloId`/`bodegaId`).
-- Pendiente de M2: derivar a Pumping y reasignar, retorno a operación y cierre de la orden, eventos con plantilla de aviso (M4).
+- Pendiente de M2: eventos con plantilla de aviso (M4).
+
+### Hecho (18/10/2026, sesión principal): frontend de Mantenimiento conectado al backend nuevo
+
+- **Adaptador:** `features/maintenance/services/mantenimiento-plataforma.service.ts` (HTTP) y `models/mantenimiento-plataforma.mapper.ts` (traductor puro: códigos estables ↔ textos de la demo). `MaintenanceOrdersService` y `UnitReportsService` conservan sus métodos y devuelven los mismos modelos, así las pantallas casi no cambiaron. Ids de reportes, órdenes y sub-órdenes: UUID (string).
+- **Qué usa el backend nuevo:** bandeja (reportes y órdenes), clasificar y reclasificar, descartar con motivo, ejecución (avance con repuestos, enviar a revisión), aprobar o pedir corrección, retorno a operación, «Mis tareas» (filtro `asignadaA` en el servidor) y el selector de repuestos.
+- **Derivar a Pumping y reasignar operador** no tienen endpoint propio: el adaptador manda una reclasificación que repite la orden como está y cambia solo esa sub-orden (`asignacionesDeOrden`).
+- **Operadores:** se ofrecen todas las cuentas activas con rol `operador_mantenimiento` (UUID); ya no se depende de `legacyId`.
+- **Retorno a operación:** ya no pide «responsable de entrega»; el backend registra la cuenta que actúa (`retornada_por`).
+- **Apagado a propósito:** reclasificar novedades de una categoría a otra (editaba el reporte de la demo; en el backend nuevo las novedades se leen del reporte de Pumping y no se editan aquí). Si Dynadrill lo necesita, decidir cómo corregirlas en el origen.
+- **Sigue en la demo (sin backend nuevo todavía):** preventivo (`UnidadesService`, registrar PM), historial de mantenimientos, KPIs, inspecciones de vehículos y el alta del Reporte de Unidad de FCR y Vehículos (`UnitReportsService.create/update`, `@deprecated`). Faltan M3 y M4 del backend.
+- **Errores:** las pantallas muestran lo que explica el backend (`shared/utils/mensaje-error.util.ts`), por ejemplo «stock insuficiente» al aprobar el cierre.

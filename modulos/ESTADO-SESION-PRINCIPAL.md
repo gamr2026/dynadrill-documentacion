@@ -163,3 +163,9 @@ Por decisión del usuario: Mantenimiento elige el repuesto del catálogo de Inve
 - **Atomicidad:** Mantenimiento e Inventario no pueden compartir transacción (clientes Prisma distintos). Se resolvió con salida idempotente por renglón (si se interrumpe, se repite el cierre). El contrato 4.1 de Pumping dice «dentro de su transacción»: **no es realizable** tal como está escrito; queda avisado en el registro de cambios.
 - **Frontend:** buscador del catálogo en el diálogo de ejecución. Falta el adaptador de todo Mantenimiento al backend nuevo.
 - **Pruebas:** Mantenimiento 36 (6 nuevas de M2 más las reglas de base), Inventario 43, frontend 353; lint y build en verde.
+
+## 14. Frontend de Mantenimiento conectado al backend nuevo (18/10/2026)
+
+- Backend: órdenes con sub-órdenes completas y `POST ordenes/:id/retornar` (Mantenimiento 37 pruebas).
+- Frontend: servicio y traductor nuevos, `MaintenanceOrdersService`/`UnitReportsService` contra `/api/operaciones/mantenimiento`, ids UUID, selector de repuestos y mensajes del backend. 368 pruebas, `ng build` verde.
+- Pendiente en esta área: preventivo, historial, KPIs e inspecciones siguen en la demo (faltan M3/M4 del backend); reclasificar novedades queda apagado; falta probar el flujo completo en el navegador con una cuenta real (el superadmin de desarrollo no inicia sesión: la clave del `.env` ya no coincide).
