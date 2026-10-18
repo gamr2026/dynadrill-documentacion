@@ -62,3 +62,16 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
 10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
 11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 9. Encargo de la sesión (18/10/2026)
+
+**Estado:** sin construir (los schemas existen vacíos). **A1 (Auditoría) tiene valor inmediato** porque todos los módulos ya publican eventos; A2 (Firmas) puede ir después o en paralelo.
+
+**Puntos finos**
+- **Auditoría suscrita a todo:** el bus pide un `source` por suscripción; suscríbase a cada contenedor productor (`operaciones`, `comercial`, `qhse`, `plataforma`) con el patrón `#` y un `group: 'auditoria'`: la plataforma ya tiene otros consumidores (avisos) de esos orígenes y **sin grupo propio se repartirían los mensajes** (sección 9 de `01-REGLAS-DE-COORDINACION.md`). Idempotente con `handleOnce` (el id del evento es la llave).
+- **Sin JSON del evento:** las pocas columnas de negocio consultables (código de pedido, número de ticket, unidad) en columnas tipadas o en la tabla hija del plan; el sujeto (`sujeto_tipo`, `sujeto_id`) viene en el sobre. Inmutable: REVOKE de UPDATE y DELETE y una prueba que lo intente.
+- **Línea de tiempo:** una consulta por sujeto (pedido, ticket, orden) y por actor; pantalla de consulta para Superadmin y auditoría. Los historiales propios de cada módulo (`comercial.proceso_historial`, `pumping.ticket_historial`) **se quedan**: este es el registro central, no los reemplaza.
+- **Firmas (A2):** `firma` con hash SHA-256 del documento o del texto firmado, hora del servidor, firmante = la cuenta autenticada (nadie firma por otro), método (`linea`, `electronica`, `manuscrita`) y `archivo_id` opcional. Los módulos la usan por HTTP interno o por evento; QHSE será el primer adoptante (D6) con su propia sesión.
+- Es el contenedor de la **plataforma** (3101): un cambio aquí obliga a todos a reconstruir; **avise en el registro** y reinicie solo `plataforma` (y el gateway si cambia rutas).
+
+Commit con `scripts/commit-modulo.ps1 -Modulo auditoria` (o `firmas`).

@@ -60,13 +60,15 @@ El mismo bloqueo (`db.lock`) aplica a: reiniciar servicios de otros, aplicar `in
 
 Roles nuevos, cambios en `infra/db/init`, nuevos contenedores, cambios al modelo de identidad o a `catalogos` (otra sesión puede depender), cambios de reglas de este directorio, cambios al gateway que afecten rutas existentes, y cualquier cambio que obligue a reiniciar todo.
 
-## 7. Git y ramas
+## 7. Git y ramas (actualizado el 18/10/2026)
 
-Hoy el repositorio `dynadrill-platform` no tiene remoto y tiene muchos archivos sin confirmar. Mientras el usuario no decida lo contrario:
+Los repositorios ya tienen remoto (cuenta privada `gamr2026`): `dynadrill-platform` (backend, rama integradora `desarrollo`), `dynadrill-frontend-platform` (frontend, rama `feat/integracion-backend-platform`, remoto de respaldo **`respaldo`**) y `dynadrill-documentacion`. **Nada va a `main` de la demo** (`dynadrill-backend` y `dynadrill-frontend` de `DIGITEC-IT-PROJECTS`); el `origin` de la carpeta del frontend es el de la demo: **nunca empuje allí**.
 
-- Todas las sesiones trabajan en la misma copia; por eso la disciplina de la regla 1 y 2.
-- **Nadie confirma (`commit`) ni sube** sin que el usuario lo pida.
-- Recomendación para cuando el usuario lo autorice: confirmar la base actual, y que cada sesión trabaje en su propia rama/*worktree* (`git worktree add ..\dynadrill-platform-<modulo> -b modulo/<modulo>`). Así se evita pisar archivos y se integra al final.
+- Todas las sesiones comparten **una sola copia de trabajo**. Por eso **nadie usa** `git add -A`, `git commit` directo, `git checkout`/`switch`, `git stash`, `git reset`, `prettier --write` ni `eslint --fix` fuera de las rutas de su módulo (ya pasó: formatear `libs/operaciones` entera cambió archivos de otras sesiones).
+- **Cómo se confirma:** con el script `scripts/commit-modulo.ps1` (sin cambiar de rama ni tocar el índice real). Crea el commit en la rama `modulo/<su-modulo>` solo con las rutas que usted indique, les da formato con Prettier, valida el mensaje con commitlint y, con `-Subir`, la sube. Backend: `./scripts/commit-modulo.ps1 -Modulo flota -Mensaje "feat(flota): ..." -Rutas libs/operaciones/flota -Subir`. Frontend (desde `dynadrill-frontend-platform`): agregue `-Remoto respaldo`.
+- **Mensajes (commitlint):** asunto en minúscula, `tipo(modulo): descripcion`, líneas del cuerpo de 100 caracteres como máximo. El script agrega la atribución.
+- **Quién fusiona:** la sesión principal fusiona `modulo/<modulo>` en `desarrollo` (lint, pruebas y compilación antes). Confirme con frecuencia (al cerrar cada tramo) para no acumular.
+- Los **documentos** (`documentacion/`) los confirma la sesión principal; usted solo los escribe.
 
 ## 7.1 Puertos y procesos
 
@@ -95,3 +97,18 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
 10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
 11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 9. Lecciones técnicas y reglas nuevas (18/10/2026)
+
+Salieron de construir Inventario, Mantenimiento y Pumping. Léalas antes de escribir código.
+
+1. **No hay transacciones compartidas entre módulos.** Cada módulo tiene su propio cliente de base de datos: no pase su `tx` a otro módulo. El dueño de los datos ofrece métodos con **transacción propia e idempotentes** (llave por renglón); el que llama los usa dentro de su transacción, **después de sus escrituras y antes de publicar el evento**, y compensa si algo falla después (el kardex no se borra: se devuelve). Ejemplos: contrato 4.1 (químicos) y 4.1-bis (repuestos).
+2. **Eventos.** El nombre empieza con el contenedor que lo produce (`operaciones.`, `comercial.`, `qhse.`, `plataforma.`). La cola de un consumidor es `<consumidor>.<origen>[.<grupo>]`: si su contenedor ya tiene otro consumidor del mismo origen, ponga un `group` distinto (si no, se reparten los mensajes y se pierden). Consuma con `handleOnce` (inbox); los errores de negocio se registran y se omiten, los demás se relanzan para que se reintente. **Tras crear un consumidor hay que reiniciar el contenedor** (las colas se crean al arrancar) y, en las pruebas, apagar `onApplicationBootstrap` (sin RabbitMQ).
+3. **Entre contenedores no hay FK**: guarde solo el id, con `COMMENT` que lo diga; cualquier texto copiado se justifica por escrito. Dentro del mismo contenedor, FK real.
+4. **No abra permisos de un módulo ajeno** para que el suyo funcione: pida (o cree) un endpoint estrecho, con el permiso del que lo necesita (ejemplos: `GET inventario/articulos/quimicos`, `GET comercial/pedidos/:id/items-para-cambio`).
+5. **Frontend: patrón de adaptación** (ver Mantenimiento y `operations/pumping/tickets-nuevos`): un servicio contra el backend nuevo, un traductor puro (códigos estables ↔ textos de la pantalla) con su prueba, ids UUID (string), errores con `mensajeDeError` (`shared/utils/mensaje-error.util.ts`) y las pantallas nuevas en su carpeta; las viejas (contra la demo) no se tocan hasta el Corte. Un cambio de ids de número a texto obliga a revisar rutas, selects y `localStorage`.
+6. **Pruebas de integración:** nombres únicos por corrida, limpiar lo que crean (incluidas `outbox`, `inbox`, archivos y maestros), no depender de tablas vacías. Dos suites a la vez en la misma base pueden fallar por ruido: repita la que falló sola. Las pruebas de Inventario con servicios levantados dejan elementos `EPP<número>` en `qhse.epi_elemento` (ver el README de sus datos).
+7. **Datos reales ya cargados** en la base de desarrollo (catálogos, inventario con stock, empleados): no los borre ni corra `infra:reset`; los `db:seed:*` y `db:cargar:*` son idempotentes.
+8. **Windows:** en `bash`, los `heredoc` con comillas o apóstrofes se rompen: escriba los archivos con la herramienta de escritura y use scripts de Node en la carpeta temporal. Los archivos tienen CRLF: conserve el fin de línea al reemplazar texto. En PowerShell 5.1 los `.ps1` con acentos deben ir con BOM.
+9. **Servicios locales:** después de `nx build <app>`, reinicie solo su contenedor (`Start-Process node dist/apps/<app>/main.js`). Si Docker detiene contenedores por memoria: `docker start dynadrill-rabbitmq-1 dynadrill-mailpit-1 dynadrill-azurite-1 dynadrill-jaeger-1`.
+10. **Antes de empezar** lea `ESTADO-SESION-PRINCIPAL.md` (las secciones de lo que su módulo consume), `REGISTRO-DE-CAMBIOS-COMPARTIDOS.md` (lo último) y el plan del módulo con su sección «Encargo». **Al terminar** actualice el plan, anote en el registro y dé el resumen al usuario.

@@ -66,3 +66,10 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
 10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
 11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 7. Estado al 18/10/2026 (sesión principal)
+
+- **Ya en el backend nuevo y con frontend conectado:** Comercial/Pedidos (parcial: falta el corte del prefijo), Inventario (admin y kardex), Pumping (ticket completo en `operations/pumping/tickets-nuevos`, ruta `pedidos`) y Mantenimiento (bandeja, ejecución, cierre y retorno, con ids UUID).
+- **Siguen contra la demo:** FCR, QHSE (salvo EPI), Flota (parcial), preventivo, historial e inspecciones de Mantenimiento, el dashboard y los KPI.
+- **Lo que hay que retirar al cortar Pumping:** la pantalla vieja del ticket (`pages/ticket-detail-page`, ~2.900 líneas), la lista vieja, el puente `bridgeToMaintenance`, `UnitReportsService.create/update` (`@deprecated`), los puentes temporales de requisitos de Flota y QHSE cuando esos módulos publiquen sus eventos, y la aprobación de la inspección por el Supervisor con el puente.
+- **No empiece un corte** hasta que el módulo tenga paridad probada y esté cerrado el trabajo de su sesión.

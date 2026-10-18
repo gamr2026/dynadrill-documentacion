@@ -165,3 +165,16 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 
 **Estándar de calidad, punto por punto (Q1):** 1 sin duplicados salvo las dos copias justificadas · 2 ids sin FK solo entre contenedores y con COMMENT · 3 catálogos con id, código único y FK (elementos, tallas, lugar) y enums para valores fijos · 4 integridad en la base (CHECK, triggers, índice único parcial, FK) · 5 historial inmutable · 6 auditoría en toda tabla editable (el historial es solo-agregar) · 7 permisos mínimos con comentario · 8 migración nueva, sin editar la anterior; los catálogos van en la semilla · 9 servicios divididos (`EpiService` ciclo y eventos, `EpiConsultaService` lectura, `EpiRenglonesService` renglones), DTO con class-validator, mensajes con «usted», transacciones y outbox en la misma transacción, consumidor idempotente · 10 pruebas que intentan violar las reglas · 11 revisado contra esta lista.
 
+## 14. Encargo de la sesión (18/10/2026)
+
+**Estado:** Q1 construido (contenedor, EPI y consulta de términos). **Pumping ya espera dos cosas de QHSE** y por eso van primero.
+
+**Orden de trabajo**
+1. **Acta de Entrega de Locación y documentos por pedido (contrato 4.11):** tabla `documento_pedido` con tipo (`formato_recepcion`, `art`, `pt`, `sfi`, `formato_entrega`), `archivo_id` (FK a `archivos.archivo`), vigencia; el Supervisor sube el Acta al finalizar el ticket (una por pedido). **Publique `qhse.acta_entrega.cargada` y `qhse.acta_entrega.anulada`** (con `ticketId` y `pedidoId`): son los nombres que el consumidor de Pumping ya tiene (si el contrato dice otro, corrija el contrato, no el consumidor). Cree el módulo de archivos correspondiente (`libs/plataforma/archivos/src/catalog/sembrar-modulos.ts`, una fila) y avise en el registro: la sesión principal agrega el botón de subida en el ticket nuevo de Pumping (`tickets-nuevos`), o le da permiso para un componente suyo. Hoy el Acta se confirma con el puente temporal.
+2. **PTW (Q3), en lo que Pumping necesita:** `qhse.ptw.abierto|firmado|cerrado` con `ticketId`/`pedidoId` (un PTW por día de operación), y la decisión D10 sobre SWA como bloqueo.
+3. **Q2 (SWA, STOP, inspecciones de campo, «Reportar»):** una inspección de vehículo-grúa rechazada origina un reporte de unidad para Mantenimiento. Mantenimiento ya recibe reportes de origen QHSE en su modelo (`novedad_qhse` y `qhse_referencia_id`, sin FK por D1) pero **falta el evento**: defínalo (`qhse.reporte_unidad.generado` con `casoId`, `unidadId` y el texto de la novedad) en el contrato 4.6 y avise; la sesión principal agrega el consumidor.
+4. **Q4 a Q6** según el plan (ambiental, emergencias e investigación, legal y metas). Los KPI del dashboard HSE salen de `reporting` (otra sesión): usted publica eventos estables con ids.
+5. **Frontend:** cada tramo con su pantalla en `features/qhse` contra `/api/v2/qhse`, con el patrón adaptador; verificar `ng build` y `ng test`.
+6. **Firmas «de una línea»:** hasta que exista la plataforma de Firmas (otra sesión, A2) guarde las suyas en su propia tabla y migre después (D6).
+
+**Entregables por tramo:** migración, semilla, pruebas (con reglas de la base), pantalla verificada, plan, registro y `scripts/commit-modulo.ps1 -Modulo qhse`. Regla nueva: sección 9 de `01-REGLAS-DE-COORDINACION.md`.

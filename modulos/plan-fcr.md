@@ -105,3 +105,19 @@ El usuario revisa primero la base de datos. Antes de dar un tramo por terminado,
 9. **Backend limpio.** Servicios pequeños con una responsabilidad, DTO validados con class-validator, errores con mensajes claros en español neutro con "usted", transacciones para todo lo que cambia varias tablas, eventos publicados por el outbox dentro de esa misma transacción, consumidores idempotentes, sin `any`, sin copiar y pegar entre módulos, comentarios que explican el porqué.
 10. **Pruebas de integración con base real** que ejerciten también las reglas de la base (CHECK, FK, REVOKE): una prueba que intente violarlas y espere el rechazo.
 11. **Pule lo ya entregado.** Antes de avanzar a un tramo nuevo, revise lo que ya construyó contra esta lista y corrija con una migración nueva. Los hallazgos concretos de su módulo están en la sección siguiente.
+
+## 12. Encargo de la sesión (18/10/2026)
+
+**Estado:** sin construir (no existe `libs/operaciones/fcr`). **Pumping ya está construido y es la referencia viva**: copie su estructura y sus decisiones, no su código (cada módulo con sus propias tablas).
+
+**Qué reutilizar de Pumping (ya probado)**
+- Pasos, roles y transiciones en tablas; requisitos por paso (`requisito`, `paso_requisito`, `ticket_requisito`) cumplidos desde el módulo, por evento de otro módulo o por el puente temporal; solo el equipo asignado mueve el ticket (`puedeActuarEn`).
+- Asignación con equipo y unidades, y `operaciones.fcr.asignacion_realizada` con `asignados` y `operadoresUnidades` (QHSE abre el EPI por cada operador).
+- Reporte de unidad de salida y de llegada (`operaciones.fcr.reporte_unidad_llegada`; Mantenimiento lo recibirá: la FK `fcr_reporte_unidad_id` y el CHECK de origen los agrega la sesión principal cuando exista su tabla).
+- **Reporte diario (bitácora) → Comercial por evento:** copie `reportes-diarios.service.ts` de Pumping (borrador, completar, reabrir, bloqueo del día corregido por Facturación con `comercial.documento_operativo.corregido`, origen `fcr`) y publique `operaciones.fcr.bitacora_enviada` con la misma forma que `operaciones.pumping.reporte_diario_completado`. En Comercial agregue (edición pequeña, anótela en el registro) el patrón ya hecho en `consumers/reporte-diario.consumer.ts` para el origen `fcr`; el **Reporte de Herramientas** (`tipo: reporte_herramientas`) usa el mismo mecanismo.
+- Cierre: publica `operaciones.fcr.cerrado` (Comercial ya lo consume y genera la prefactura si la documentación está completa); exige el **Acta de Entrega** (QHSE, contrato 4.11) y «Ver prefactura» / firma del Company Man desde el ticket (endpoints de Comercial `prefactura-vista` y `prefactura/firma-company-man`; el diálogo del frontend está en `pumping/tickets-nuevos/components/ticket-prefactura-dialog`: pida a la sesión principal moverlo a un lugar compartido o impórtelo).
+- Herramientas y artículos: Inventario ya tiene artículos con partes (`articulo_parte`) y kardex; use su servicio exportado (con transacción **propia**, ver regla 1 de la sección 9 de `01-REGLAS-DE-COORDINACION.md`).
+
+**Orden de trabajo:** F1 contenedor + ticket + pasos + asignación (los dos recorridos), F2 configuración por cliente y código + herramientas del ticket, F3 inspección de herramientas, F4 bitácora y reportes a Comercial, F5 retorno, cierre y prefactura, F6 frontend de cada tramo (`features/operations/fcr`, con el patrón adaptador, sin tocar las pantallas viejas hasta el Corte).
+
+**Antes de empezar:** las consultas de FCR (sección 10 de este plan) van en un archivo nuevo, `documentacion/fcr/CONSULTAS-PARA-DYNADRILL.md`, que usted crea; cualquier decisión de negocio va a `03-DECISIONES-PENDIENTES.md`. Commit con `scripts/commit-modulo.ps1 -Modulo fcr`.
