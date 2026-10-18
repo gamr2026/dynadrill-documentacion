@@ -56,7 +56,22 @@ Pasos existentes en la base: `revision_inicial` y `asignacion` (hechos), `trasla
 - **Acta de Entrega de Locación:** sigue siendo requisito de QHSE (contrato 4.11); como QHSE aún no construyó la carga del acta, se confirma con el **puente temporal** (botón «Confirmar a mano»). Cuando QHSE publique `qhse.documento.acta_entrega_cargada`, el consumidor ya la cumple solo.
 - Pruebas: 374 en el frontend; `ng build` verde.
 
-- **Pendiente del frontend de Pumping:** revisión de reportes de salida (P2), Reporte Diario, solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
+### Hecho el 18/10/2026 (sesión principal): P2 y el Reporte Diario
+
+**P2 Revisión de reportes de salida.** El Supervisor del equipo aprueba la inspección de cada unidad: `POST /api/operaciones/pumping/tickets/:id/revision-salida/inspecciones/:vehiculoId/aprobar` (solo en ese paso; lo hace el Supervisor del equipo o Superadmin; 409 si ya estaba aprobada). La inspección es de Flota: mientras Flota no construya la suya, la aprobación del Supervisor cumple el requisito `inspeccion_vehiculo_aprobada` con el puente temporal (origen `manual_temporal`, quién y cuándo, motivo fijo); cuando llegue `flota.inspeccion_vehiculo.aprobada` no choca con lo ya aprobado. El gerenciamiento de viaje de salida sigue siendo de Flota/Jefe de Base (puente de Jefe de Base). En pantalla: «Aprobar inspección» y «Ver reporte de salida» en los requisitos del paso.
+
+**Reporte Diario (DYN-SGI-RE-047, el Reporte Job), backend.**
+- Tablas propias en `pumping` (migración `20261021120000_reporte_diario`), sin JSON: `reporte_diario` (uno por ticket y día; representante del cliente, tiempos productivo y no productivo, observaciones, quién y cuándo lo completó, `corregido_at`), `reporte_diario_actividad` (hora de inicio y fin; la duración se calcula, no se guarda), y las tablas de cada actividad: `reporte_diario_tabla`, `_columna`, `_fila` y `_celda`. CHECK: horas distintas, detalle no vacío, completado con quién y cuándo, tiempos entre 0 y 24.
+- Endpoints (`/operaciones/pumping/tickets/:id/reportes-diarios`): `GET` (días con estado y horas), `GET :fecha`, `PUT :fecha` (guarda como borrador y reemplaza el día; si estaba completado lo **reabre**) y `POST :fecha/completar`. Solo el Operador del equipo y en la Ejecución operativa.
+- Al completar se publica `operaciones.pumping.reporte_diario_completado` (día, actividades con sus tablas, supervisor, operador). **Comercial lo consume** (`ReporteDiarioConsumer`, cola propia con `group: 'reportes-diarios'`) y lo recibe como documento operativo de origen Pumping: reemplaza el documento de la misma clave, así que reenviar un día reabierto no duplica; si Facturación ya lo corrigió o el pedido ya no recibe documentos, se omite sin fallar.
+- **Corrección de Facturación:** Pumping consume `comercial.documento_operativo.corregido` (`DiaCorregidoConsumer`) y marca el día; desde entonces el ticket ya no lo edita ni lo reenvía (409 `DIA_CORREGIDO`). Si el día no tenía reporte queda un registro sin actividades que lo bloquea.
+- Pruebas: Pumping 25, Pedidos 108.
+
+**Reporte Diario, frontend** (`tickets-nuevos`): tarjeta «Reporte diario de actividades» en el ticket (días con su estado: borrador, completado o corregido por Facturación; «Llenar reporte de ese día»); diálogo con la cabecera del ticket, representante del cliente, actividades (inicio, fin, detalle y el editor de tablas ya existente), tiempos y observaciones; «Guardar borrador» y «Completar y enviar a Facturación». Pruebas: 377 en el frontend.
+
+**No portado del Reporte Diario de la demo (decisiones pendientes):** descargar o cargar la plantilla Excel DYN-SGI-RE-047 (y la hoja «Tablas»), el documento de monitoreo por día, las firmas dibujadas del supervisor y del cliente, y el archivo adjunto. Los documentos del ticket (monitoreo, ART y PT) siguen pendientes.
+
+- **Pendiente del frontend de Pumping:** solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
 - **Sigue pendiente:** P3 Reporte Diario completo y documentos del ticket (monitoreo, ART, PT), P4 herramientas, inspección de llegada, P6 pantalla, P7, P8, P9 y **todo el frontend de Pumping** (la pantalla del ticket sigue contra la demo).
 
 ## 2. Qué hay en la demo
