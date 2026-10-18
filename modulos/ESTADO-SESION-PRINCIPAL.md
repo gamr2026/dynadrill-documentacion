@@ -119,3 +119,27 @@ Los commits de estas ramas se crearon sin ejecutar los ganchos de commit (lint-s
 - Datos de prueba residuales (2 clientes y 2 pozos `IT`) de una corrida fallida de mis pruebas: eliminados.
 
 **Copias de seguridad:** quedan dos stash (`dynadrill-platform` y el frontend, «respaldo ... antes de fusionar») con el árbol de trabajo anterior; todo su contenido ya está en las ramas. Pueden borrarse cuando el usuario lo confirme.
+
+## 10. EPP de AS2, D16 y comparación del catálogo de AS2 (17/10/2026)
+
+**Hecho (en `desarrollo`, commit `e6e5f02`):**
+- El reporte de AS2 «INVENTARIO PRODUCTO ATRIBUTO AS2.xlsx» (3.770 productos) trae la categoría **EPP** con 74 productos. Se depuró (5 con nombre de empleado excluidos, 11 fusionados por talla, duplicado o digitación) y se cargó en Inventario: **58 artículos**, **37 de entrega personal** (`npm run db:cargar:epp`; detalle en `libs/operaciones/inventario/prisma/data/README.md`).
+- **D16 resuelta:** los elementos de EPI son artículos de Inventario; QHSE guarda una réplica (`qhse.epi_elemento`) mantenida por el evento `operaciones.inventario.articulo_epi_actualizado`. Se retiró el catálogo inventado de 12 elementos. La talla sigue siendo un catálogo de QHSE (la talla no es parte del artículo). Frontend de Inventario: casilla «se entrega a una persona» y tipo de talla.
+- **Error corregido en el bus de eventos:** dos consumidores del mismo origen en un contenedor compartían cola y se perdían mensajes (cola `operaciones.comercial`: creación de tickets de Pumping y despachos; cola `qhse.operaciones`). `Subscription.group` nuevo; regla en el registro de cambios.
+- Verificación: lint, pruebas con base real y build de los 21 proyectos; frontend `ng build` y 352 pruebas.
+
+**Comparación del catálogo de AS2 con Inventario (solo lectura, nada cargado):**
+
+| Categoría de AS2 | En AS2 | Ya en Inventario | Falta | Qué es |
+|---|---|---|---|---|
+| QUIMICA | 497 | 155 | 342 | Inventario (químicos). 117 con espacios en el código (ej. `DYFE - 100`) |
+| COMPLETION BIENES | 386 | 287 | 99 | Inventario |
+| FISHING CONSUMO | 191 | 62 | 129 | Inventario |
+| FISHING & TOOLS | 182 | 136 | 46 | Inventario (herramientas) |
+| MANTENIMIENTO (suministros y mantenimiento) | 653 | 0 | 653 | Repuestos y suministros: Inventario o Mantenimiento |
+| EPP | 74 | 58 + 11 equivalencias | 5 | Los 5 son los overoles con nombre de persona (excluidos a propósito) |
+| SERVICIO FISHING, SERVICIOS PUMPING, COMPLETION SERVICIOS, COILED TUBING, SERVICIOS | 1.770 | 0 | — | Servicios de facturación (listas de precios de Comercial): **no** son inventario |
+| COMPRA IVA, COMPRA 0%, GASTOS INDIRECTOS, ARTICULOS NO INVENTARIADOS | 17 | 1 | — | Conceptos contables, no inventario |
+
+En Inventario y no en AS2: 48 herramientas del registro de inspección (esperado). El reporte no trae costo, saldo ni bodega: solo código, nombre, nombre comercial, marca y proveedor. 97 nombres se repiten en AS2.
+**Decisiones pendientes del usuario:** si se cargan los ~1.269 productos faltantes de bienes (químicos, completion, fishing, mantenimiento); qué hacer con los 117 códigos de químicos con espacios (hoy el alta de artículos los rechaza: «el código no puede llevar espacios»); si MANTENIMIENTO (repuestos) va a Inventario.
