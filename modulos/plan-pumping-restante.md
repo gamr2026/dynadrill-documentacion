@@ -47,7 +47,16 @@ Pasos existentes en la base: `revision_inicial` y `asignacion` (hechos), `trasla
 - **Asignar equipo:** el diálogo trae «Químicos (opcional)»: químico (solo con existencia), bodega con su saldo, cantidad y el documento de mezcla (obligatorio si hay químicos; se sube a `archivos` y luego se asigna). Los errores del archivo y de la asignación se muestran por separado.
 - **Detalle del ticket:** tarjeta «Químicos del ticket» (asignado, usado, devuelto y a cargo del ticket); «Registrar consumo» (Operador del equipo, en Ejecución operativa) y «Devolver a bodega» (Supervisor del equipo, en Control de retorno); botón «Formalizar ejecución» para el Supervisor.
 - Pruebas: 372 en el frontend; `ng build` verde.
-- **Pendiente del frontend de Pumping:** revisión de reportes de salida (P2), reporte de unidad de llegada y revisión final/cierre (P5 y P6, con «Ver prefactura» y la firma del Company Man), Reporte Diario, solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
+### Hecho el 18/10/2026 (sesión principal): frontend de P5 y P6 en `tickets-nuevos`
+
+- **P5 Traslado de llegada:** diálogo «Reporte de unidad de llegada» (`ticket-reporte-llegada-dialog`): fecha y combustible, hubodómetro y llantas de la llegada (los ejes son los que registró la salida), inspección por secciones, novedades por área (mecánica, instrumentación, operaciones), unidad lista e interrupción de la operación (con detalle obligatorio). Lo firma el operador de la unidad; el requisito `reporte_unidad_llegada` abre el diálogo (solo lectura para los demás y fuera de su paso). Con novedades, el reporte llega solo a Mantenimiento (contrato 4.2).
+- **P6 Revisión de reportes de llegada:** el Supervisor consulta cada reporte (solo lectura) desde los requisitos del ticket y pasa a Revisión final.
+- **P6 Revisión final y cierre:** botón «Ver prefactura y firma del Company Man» (permiso `comercial.prefacturas.vista_ticket`): muestra la prefactura vigente o la preliminar (no guarda nada) con sus totales y el avance de la documentación del pedido; el Supervisor (permiso `comercial.prefacturas.firma_company_man`) sube el documento firmado (módulo de archivos `prefactura_company_man`), solo con la documentación completa (el diálogo dice qué falta).
+- **Devolver con motivo:** las salidas que exigen motivo (p. ej. rechazar la revisión final y volver a la revisión de llegada) piden el motivo antes de enviarse; el botón dice «Devolver a …» y no queda bloqueado por los requisitos pendientes.
+- **Acta de Entrega de Locación:** sigue siendo requisito de QHSE (contrato 4.11); como QHSE aún no construyó la carga del acta, se confirma con el **puente temporal** (botón «Confirmar a mano»). Cuando QHSE publique `qhse.documento.acta_entrega_cargada`, el consumidor ya la cumple solo.
+- Pruebas: 374 en el frontend; `ng build` verde.
+
+- **Pendiente del frontend de Pumping:** revisión de reportes de salida (P2), Reporte Diario, solicitudes de cambio de ítems (P7), tarjeta de gerenciamiento (P9). La pantalla vieja `pages/ticket-detail-page` (contra la demo) sigue sin tocarse.
 - **Sigue pendiente:** P3 Reporte Diario completo y documentos del ticket (monitoreo, ART, PT), P4 herramientas, inspección de llegada, P6 pantalla, P7, P8, P9 y **todo el frontend de Pumping** (la pantalla del ticket sigue contra la demo).
 
 ## 2. Qué hay en la demo
