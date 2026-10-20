@@ -112,3 +112,34 @@ Siga `plan-corte-de-la-demo.md`: módulo por módulo, el gateway deja de caer en
 ## 5. Bitácora de esta fase
 
 _(agregar una línea por tarea terminada: fecha · tarea · commit · pruebas)_
+
+- 19/10/2026 · Fase A (backend): fusión `modulo/fcr` → `qhse` → `flota` en `desarrollo` · `c4531d0` (empujado a origin) · pruebas de integración por librería verdes salvo Inventario (695≠689 artículos AS2, ajeno a la fusión).
+- 19/10/2026 · Fusión del frontend (fcr, qhse, flota + pantallas de Mantenimiento) · `cc7171b` en `respaldo/feat/integracion-backend-platform` · build y 443 pruebas OK.
+
+### 5.1 Hallazgos de la prueba manual del usuario (19/10/2026)
+
+Pendientes de revisar; el usuario propone **alinear el frontend con la demo, empezando por Pumping**.
+
+- [ ] Datos repetidos en pantallas (por confirmar cuáles; relacionado con el borrado de datos de prueba).
+- [ ] Pumping permite asignar como supervisor a un usuario que es supervisor de FCR (L. Vega); la solicitud de cambio de ítems debía llegarle a él para aprobar y no le aparece nada. Validar que solo roles de Pumping sean asignables y que la bandeja de aprobación use el mismo criterio.
+- [ ] «Requisitos para avanzar» de Pumping dice que Flota se confirma a mano «mientras no esté en el portal nuevo», pero Flota ya está integrada: retirar el puente temporal (B5/C).
+- [ ] El flujo del frontend difiere del de la demo (navegación); en Pumping todos los pasos quedaron centralizados en «Requisitos para avanzar», cosa que la demo no hace.
+- [ ] Reporte diario de actividades no recupera el nombre del company man.
+- [ ] QHSE: mismo texto de puente («mientras QHSE no esté en el portal nuevo») y el Acta de Entrega es un modal con motivo (Fase C: `app-acta-entrega-carga`).
+- [ ] Propuesta: revisar el frontend con Playwright y compararlo con la demo, partiendo de Pumping. **Estado:** el plugin de Playwright no está disponible en esta sesión; hace falta habilitarlo (o comparar con capturas del usuario).
+
+### 5.2 Comparación Pumping: demo (prod) vs portal nuevo (19/10/2026, con Playwright)
+
+Referencia: `https://dynadrill.digitec.com.ec` (cuenta superadmin de la demo). Portal nuevo: `localhost:4200`.
+
+| Tema | Demo | Portal nuevo |
+|---|---|---|
+| Menú Operaciones | Pumping · Gerenciamiento de Viaje | Pumping · **Pedidos de Pumping** · FCR · Pedidos de FCR · Códigos por cliente (Gerenciamiento de Viaje queda en Flota) |
+| Lista | Indicadores (total, revisión inicial, traslado de salida, revisión final, aprobados) + pestañas «En proceso» / «Aprobados» + tabla con «Ver detalle» y «Ver documentos» | «Pedidos de Pumping»: bandeja «tickets que atiende mi rol» con filtro por paso, botón Aprobaciones y «Ver todos los tickets»; sin indicadores ni pestañas |
+| Detalle | Una sola página por ticket: encabezado con 3 botones (pedido de Ventas, cambio de ítems, prefactura), **línea «Avance del ticket» de 10 pasos** a la derecha y el **formulario del paso actual** («Guardar y continuar») a la izquierda; Documentos QHSE como bloque aparte | Página vertical sin línea de avance; un solo botón de transición («Pasar a …»); en Cierre aparece «este paso todavía no se puede trabajar en el portal nuevo» y el bloque **«Requisitos para avanzar»** concentra Flota, QHSE y Pumping |
+| Requisitos Flota/QHSE | Pasos y documentos propios de cada fase | «Confirmado a mano (temporal)» para EPI, inspecciones, gerenciamiento de viaje y Acta de entrega, aunque Flota ya está integrada |
+
+Hallazgos técnicos:
+- La entrada «Pumping» del menú nuevo (pantallas de la demo) llama a `/api/operations/pumping/tickets`, `/api/qhse/*`, `/api/articulos`, `/api/unidades`, `/api/facturacion/pedidos`: el gateway solo enruta `/api/operaciones`, `/api/comercial`, `/api/v2/qhse` y lo demás cae a demo-legacy (apagado) → **502** y tableros en 0 (12 errores en la consola del dashboard).
+- Las pantallas reales del flujo nuevo son «Pedidos de Pumping» (`/modulos/operativo/pumping/pedidos`); coexisten dos Pumping.
+- Capturas en `C:\Users\Digitec\Documents\proyectos\` (`demo-pumping-*.png`, `nuevo-pumping-4531.png`).
