@@ -37,7 +37,7 @@ Que el frontend deje de hablar con el backend de la demo y todo pase por el back
 
 - **Ids numéricos → UUID** en el frontend y en datos guardados en el navegador (ver `localStorage`).
 - Diferencias entre la copia del backend de la demo y la versión que corre el cliente (D5): validar contra el frontend y las specs.
-- Datos de producción de la demo (D11): decisión del usuario.
+- Datos de producción de la demo (D11): **resuelto el 21/10/2026: no hay datos reales; se arranca vacío** y solo se llevan los catálogos (la mayoría ya están en la base nueva).
 - Trabajo en curso: un corte no se hace mientras otra sesión modifica el contrato del mismo módulo.
 
 ## 6. Quién lo hace
