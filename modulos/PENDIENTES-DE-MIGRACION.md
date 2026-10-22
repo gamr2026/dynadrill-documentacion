@@ -92,6 +92,7 @@ Además, dentro de QHSE ya construido quedan abiertos: **B1/B2** (SWA activa y P
 
 ### 2.4 Inventario
 
+- **Pantalla «Despachos de Bodega» sin conectar (detectado 22/10/2026):** el backend nuevo ya registra la solicitud (el pedido pasa a `por_despachar_bodega`, evento `comercial.despacho.solicitado`) y lista los pendientes en `GET /api/operaciones/inventario/despachos`, pero `/dashboard/inventario/despachos` sigue leyendo `/facturacion/solicitudes-despacho` de la demo y no muestra nada. Adaptarla a `operaciones/inventario/despachos` (despachar con respaldo y MSDS, rechazar) conservando el diseño de la demo; mientras tanto el despacho solo se completa desde la sección de guías del pedido. Revisar también que el texto de `prefactura-detail-page` use «usted» (hoy tiene voseo).
 - **B7 — Inventario ↔ FCR:** decidir si la herramienta de FCR mueve el kardex o solo se registra (hoy no mueve stock). Si mueve, agregar `ticket_fcr_id` con migración.
 - **Mínimos de stock** y evento `stock.bajo_minimo` (IN4); unidad como catálogo compartido (IN9).
 - **Conciliación con AS2** (`articulo.as2_id`) cuando Asinfo exponga productos y existencias (depende de ellos).
@@ -152,7 +153,7 @@ Aplican siempre las reglas de §0.2. Servicios del frontend que **todavía apunt
 
 | Servicio / pantalla de la demo | Reemplazo en el backend nuevo |
 |---|---|
-| `features/inventario/services/articulos`, `articulo-partes`, `movimientos-inventario` | `/api/operaciones/inventario` (ya hay `inventario-plataforma.service`; faltan las pantallas de despachos y vehículos) |
+| `features/inventario/services/articulos`, `articulo-partes`, `movimientos-inventario` | `/api/operaciones/inventario` (ya hay `inventario-plataforma.service`; faltan las pantallas de despachos —ver §2.4— y vehículos) |
 | `features/maintenance/services/unidades`, `historial-mantenimiento`, `unit-reports`, `vehicle-inspections` | `/api/operaciones/flota` y `/api/operaciones/mantenimiento` |
 | `features/conductor/services/gerenciamiento-viaje` (portal del Conductor) | `/api/operaciones/flota` (gerenciamientos de viaje) |
 | `features/operations/fcr/services/fcr.service`, `fcr-configuracion-codigos` | `/api/operaciones/fcr` (los tickets nuevos ya lo usan) |
