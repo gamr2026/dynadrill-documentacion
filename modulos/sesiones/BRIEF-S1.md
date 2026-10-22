@@ -44,3 +44,25 @@ Lea primero, en este orden: `documentacion/modulos/PLAN-SESIONES-PARALELAS.md` (
 ## Criterio de «terminado» por subdominio
 
 Migración aplicada en base vacía · semilla de catálogos · API con permisos en `permissions.ts` · eventos por outbox · pruebas de integración en verde (reglas de la base incluidas) · `PENDIENTES-DE-MIGRACION.md` actualizado (hecho / falta / qué necesitará el frontend) · commit con `commit-modulo.ps1`.
+
+## Frontend (segunda parte: solo después del backend)
+
+**Orden:** primero todo su backend, hasta la hora de corte. Después, en el último bloque, adapte el frontend de los subdominios que quedaron **terminados, probados y commiteados**. Lo que no alcance queda anotado en `PENDIENTES-DE-MIGRACION.md` como pendiente de frontend. La sesión principal se encarga de las pantallas cuyo backend ya existía antes de hoy (Despachos de Bodega, Códigos por cliente de FCR, corte de Facturación a `/api/comercial`, catálogos a `/api/v2/catalogos`): **no las toque**.
+
+**Dónde:** `C:/Users/Digitec/Documents/proyectos/dynadrill/dynadrill-frontend-merge` (rama de trabajo `integracion/fusion-front`; es la copia adaptada del frontend, **su `origin` es la demo: NUNCA empujar a `origin`**). Se edita en esa carpeta, sin cambiar de rama.
+
+**Cómo se entrega:** rama propia `modulo/s1-front` (ya creada) con el script, desde la carpeta del frontend, solo con rutas propias:
+`..\..\dynadrill-platform\scripts\commit-modulo.ps1 -Modulo s1-front -Mensaje "feat(...): ..." -Rutas <rutas propias> -Subir -Remoto respaldo`
+(el script crea el commit en `modulo/s1-front` sin tocar la rama actual; la sesión principal la fusiona en `integracion/fusion-front`).
+
+**Reglas de frontend (obligatorias):**
+- **Diseño idéntico al de la demo, en escritorio y móvil.** No invente diseño ni haga «copy-pages sin estilos»: tome los componentes y estilos de la pantalla de la demo (`dynadrill/dynadrill-frontend/src/app/features/...`) y cambie solo los datos y la lógica para usar el backend nuevo (`/api/v2/qhse`, `/api/operaciones/...`, `/api/comercial`, `/api/plataforma/...`; ids UUID). Antes de agregar algo, confirme en la demo que es parte del flujo.
+- Texto en español neutro con **«usted»**, nunca voseo (también en mensajes de error y botones).
+- Angular del proyecto: componentes standalone con `ChangeDetectionStrategy.OnPush`, señales, `input()`/`output()`, flujo de control nativo (`@if`, `@for`), formularios reactivos, accesibilidad AA. Retire el servicio de la demo que la pantalla reemplaza.
+- **Archivos compartidos del frontend** (`app.routes`, `qhse.routes.ts`, `navigation.service.ts`, modelos y servicios comunes): solo agregue su bloque; **no los incluya en su commit** (el script formatearía y llevaría los cambios de otras sesiones): avise a la sesión principal qué cambió y ella los commitea.
+- Verificación: `npx ngc --noEmit -p tsconfig.app.json` (no valida SCSS: use `npx sass --no-source-map archivo.scss`), `npx ng test --watch=false --include='<ruta>'`. **No use el navegador (Playwright) ni levante `ng serve`**: son del usuario y de la sesión principal; pida al usuario que revise la pantalla.
+- Solo formatee (`prettier`) sus propias rutas.
+
+**Pantallas de su alcance:**
+- `features/qhse/desechos`, `features/qhse/derrames`, `features/qhse/emergencias` (y su entrada en el menú y en el tablero de QHSE cuando exista el dato).
+- Avisos visibles al usuario de desechos (límite de 12 meses) y de derrames (notificación al MAE).

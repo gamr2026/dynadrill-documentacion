@@ -78,3 +78,10 @@ Lo que no esté probado y commiteado a la hora del corte **no se fusiona**: se d
 - [ ] `RUN_INTEGRATION=1 npx nx run-many -t test` en verde; `lint` y `build` de los contenedores.
 - [ ] Gateway: los prefijos nuevos pasan (B11) y `routes.spec.ts` actualizado.
 - [ ] `PENDIENTES-DE-MIGRACION.md` y `REGISTRO-DE-CAMBIOS-COMPARTIDOS.md` al día; frontend pendiente listado por pantalla.
+
+## 8. Frontend: quién lo hace
+
+- **Cada sesión (S1–S4) adapta el frontend de lo que construyó**, después del backend: el último bloque del día, solo de los subdominios terminados y probados; lo demás queda como pendiente de frontend en `PENDIENTES-DE-MIGRACION.md`.
+- **La sesión principal** hace las pantallas cuyo backend ya existía: Despachos de Bodega, Códigos por cliente de FCR, corte de Facturación a `/api/comercial`, catálogos a `/api/v2/catalogos`, y los servicios de Inventario, Flota y Mantenimiento que aún apuntan a la demo. Además commitea los cambios en archivos compartidos del frontend (rutas, navegación) que las sesiones le avisen.
+- Todo en la copia `dynadrill-frontend-merge` (sin copias nuevas); cada sesión entrega en su rama `modulo/s1-front` … `modulo/s4-front` con `commit-modulo.ps1 -Remoto respaldo` (nunca `origin`: es la demo). La sesión principal fusiona esas ramas en `integracion/fusion-front`.
+- Diseño idéntico al de la demo (escritorio y móvil) y «usted»: reglas completas en la sección «Frontend» de cada brief.
