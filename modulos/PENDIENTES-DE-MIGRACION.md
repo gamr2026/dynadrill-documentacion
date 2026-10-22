@@ -93,7 +93,7 @@ Además, dentro de QHSE ya construido quedan abiertos: **B1/B2** (SWA activa y P
 ### 2.4 Inventario
 
 - **Pantalla «Despachos de Bodega» sin conectar (detectado 22/10/2026):** el backend nuevo ya registra la solicitud (el pedido pasa a `por_despachar_bodega`, evento `comercial.despacho.solicitado`) y lista los pendientes en `GET /api/operaciones/inventario/despachos`, pero `/dashboard/inventario/despachos` sigue leyendo `/facturacion/solicitudes-despacho` de la demo y no muestra nada. Adaptarla a `operaciones/inventario/despachos` (despachar con respaldo y MSDS, rechazar) conservando el diseño de la demo; mientras tanto el despacho solo se completa desde la sección de guías del pedido. Revisar también que el texto de `prefactura-detail-page` use «usted» (hoy tiene voseo).
-- **B7 — Inventario ↔ FCR:** decidir si la herramienta de FCR mueve el kardex o solo se registra (hoy no mueve stock). Si mueve, agregar `ticket_fcr_id` con migración.
+- **B7 — Inventario ↔ FCR: DECIDIDO el 22/10/2026:** las herramientas que el operador selecciona en el flujo de FCR **no mueven el kardex**; solo se registran en el ticket. No se agrega `ticket_fcr_id` a los movimientos.
 - **Mínimos de stock** y evento `stock.bajo_minimo` (IN4); unidad como catálogo compartido (IN9).
 - **Conciliación con AS2** (`articulo.as2_id`) cuando Asinfo exponga productos y existencias (depende de ellos).
 - **Cargas pendientes:** `articulo_parte` y `articulo_codigo` vacíos de origen; si los datos de la demo no los traen, consultar a Dynadrill.

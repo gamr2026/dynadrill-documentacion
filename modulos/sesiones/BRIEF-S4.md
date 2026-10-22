@@ -1,0 +1,48 @@
+# BRIEF S4: Operaciones (FCR, Mantenimiento B3, Pumping D2, Inventario)
+
+## Prompt de arranque
+
+Abra Claude Code en `C:/Users/Digitec/Documents/proyectos/dynadrill-platform-s4` y pegue:
+
+```
+Usted es la sesión S4 del plan de sesiones paralelas de Dynadrill. Trabaje SOLO en esta carpeta (rama sesion/s4-operaciones).
+Lea C:/Users/Digitec/Documents/proyectos/documentacion/modulos/sesiones/BRIEF-S4.md y siga sus instrucciones y las reglas de
+C:/Users/Digitec/Documents/proyectos/documentacion/modulos/PLAN-SESIONES-PARALELAS.md. Responda en español con «usted». Empiece por la mini-especificación
+y el plan de rebanadas de su primer subdominio y espere la aprobación del usuario antes de construir.
+```
+
+## Datos de la sesión
+
+- Carpeta de trabajo: `C:/Users/Digitec/Documents/proyectos/dynadrill-platform-s4` · rama: `sesion/s4-operaciones` · módulo para `commit-modulo.ps1`: `operaciones`
+- Código principal: `libs/operaciones/{fcr,flota,mantenimiento,pumping,inventario}`
+- Antes de la primera prueba: `npx nx run <proyecto>:prisma-generate` (los clientes generados no se versionan).
+
+## Cómo trabajar (obligatorio)
+
+Lea primero, en este orden: `documentacion/modulos/PLAN-SESIONES-PARALELAS.md` (reglas §4 y §5: son obligatorias), `documentacion/modulos/PENDIENTES-DE-MIGRACION.md` (§0 y la sección de su módulo), `documentacion/modulos/00-CONTEXTO-COMPARTIDO.md` y `01-REGLAS-DE-COORDINACION.md`, y el plan de su módulo. Luego siga el flujo del §4 del plan con las skills instaladas (`using-agent-skills`, `spec-driven-development` corto, `planning-and-task-breakdown`, `incremental-implementation` + `test-driven-development`, `doubt-driven-development` en migraciones, `code-review-and-quality`).
+
+**Primera entrega:** la mini-especificación y el plan de rebanadas de su primer subdominio. **Muéstrela al usuario y espere su aprobación** antes de escribir migraciones o código.
+
+## Alcance (en este orden de prioridad)
+
+1. **FCR** (`libs/operaciones/fcr`): (a) disponibilidad de operadores por rango en la asignación (✓/✗ por operador según el servicio, como la demo; Pumping ya tiene `ocupadas`: reutilice la idea); (b) **Observaciones** del ticket (registro con autor y fecha, inmutable); (c) datos para el **PDF de resumen y la encuesta de satisfacción** del cierre (encuesta normalizada: preguntas en catálogo, respuestas en filas); (d) endpoint para el banner de la **matriz IPERC** del ticket (por evento o consulta, sin FK entre contenedores); (e) decidir con el usuario si el ticket del servicio puede **volver de Inspección a «Tipo de operador»** o si ese paso exige el listado de herramientas antes de avanzar (hoy un ticket pasado sin herramientas queda atascado; ejemplo: ticket 4551). **Revise la demo con cuidado antes de agregar cada ítem**: el usuario ya reprochó agregar de más.
+2. **Mantenimiento B3**: consumidor de `qhse.reporte_unidad.generado` (suscripción única a `source: 'qhse'`, idempotente por `casoId`, crea el reporte recibido con origen QHSE). FCR no genera reporte de unidad.
+3. **Pumping D2**: migrar Pumping de `catalogos.vehiculo` a `flota.unidad` (asignación y guía), sin FK entre contenedores (ids con `COMMENT`) y con migración de los datos existentes.
+4. **Inventario**: mínimos de stock y evento `stock.bajo_minimo` (IN4); unidad como catálogo compartido (IN9). **B7 decidido el 22/10/2026: las herramientas de FCR NO mueven el kardex.** No invente IN1, IN2, IN3, IN5 ni IN8 (esperan decisión del usuario).
+
+## Planes y documentos de referencia
+
+- `documentacion/modulos/plan-fcr.md`, `plan-mantenimiento.md`, `plan-flota.md`, `plan-inventario.md`, `plan-pumping-restante.md`, `documentacion/fcr/`, `documentacion/mantenimiento/`.
+- Demo: `dynadrill/dynadrill-frontend` (pantallas FCR) y `dynadrill-backend`.
+- El diseño acumulativo por fase de FCR (tal cual la demo) no se cambia.
+
+## Reglas específicas de esta sesión
+
+- Cuatro módulos en una sesión: **trabaje de a uno, en el orden indicado**; no deje dos a medias.
+- No toque los consumidores de Comercial (S3). Si S3 necesita otro campo en un evento de FCR, la solicitud va en `REGISTRO-DE-CAMBIOS-COMPARTIDOS.md`.
+- Migraciones: `2026102413xxxx` en adelante (posteriores a `20261023120000`); cada esquema con su `db:migrate:<x>`.
+- Las pruebas de FCR tardan 3–5 min: ejecútelas en segundo plano y espere con Monitor.
+
+## Criterio de «terminado» por subdominio
+
+Migración aplicada en base vacía · semilla de catálogos · API con permisos en `permissions.ts` · eventos por outbox · pruebas de integración en verde (reglas de la base incluidas) · `PENDIENTES-DE-MIGRACION.md` actualizado (hecho / falta / qué necesitará el frontend) · commit con `commit-modulo.ps1`.
