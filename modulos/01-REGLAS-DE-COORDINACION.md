@@ -48,6 +48,15 @@ La máquina tiene poca memoria. Antes de correr `npx nx run-many ...`, un build 
 
 El mismo bloqueo (`db.lock`) aplica a: reiniciar servicios de otros, aplicar `infra:reset`, o correr los *seeds* de identidad.
 
+### 4.1 Base de pruebas separada (desde el 26/10/2026)
+
+Las pruebas de integración (`RUN_INTEGRATION=1`) corren **solo** contra `dynadrill_test`, nunca contra `dynadrill` (la del portal). Antes compartían base: dejaban datos visibles en el portal, adelantaron la secuencia PEC- hasta 900058 y el outbox que escribían lo publicaban los servicios encendidos (Operaciones creaba tickets para pedidos de prueba).
+
+- `npm run db:test:preparar` crea o reinicia `dynadrill_test` como copia de `dynadrill` y el vhost de RabbitMQ `dynadrill_test`. Repítalo después de aplicar migraciones nuevas en desarrollo (o aplique la migración también en la de pruebas).
+- `tools/jest/base-de-pruebas.cjs` (en el `jest.preset.js`) arma las URL `TEST_*` (bases y `TEST_RABBITMQ_URL`) con las credenciales de `infra/.env` y **rechaza** cualquiera que no apunte a una base o vhost `*_test`. Motivo del vhost: la prueba de Plataforma levanta la app completa con las mismas colas que el servicio encendido, que le consumía los mensajes.
+- Las pruebas se conectan directo a Postgres (5433), no por PgBouncer.
+- Con `RUN_INTEGRATION` cada proyecto corre sus archivos en serie (`maxWorkers: 1` en el preset). Entre proyectos use `npx nx run-many -t test --parallel=1`: en paralelo, las pruebas de concurrencia (30 entradas de kardex, 25 emisiones de secuencia) agotan el tiempo de transacción y los tableros cuentan datos de otros archivos.
+
 ## 5. Cómo se comunican las sesiones
 
 - **Por escrito, en este directorio.** No hay conversación directa.
