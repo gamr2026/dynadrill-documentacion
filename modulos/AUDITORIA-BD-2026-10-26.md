@@ -19,14 +19,23 @@ Se revisó la base `dynadrill` (20 esquemas, unas 400 tablas) con consultas sobr
 | 3 | Nombres de catálogo sin unicidad | Casi todo era falso positivo: el `codigo` ya es único o clave primaria. Solo se agregó la unicidad del criterio de inspección por tipo |
 | 5 | `pumping.ticket_historial` permitía UPDATE a la aplicación (el de FCR no) | `REVOKE UPDATE, DELETE` |
 
+## Segunda tanda (misma fecha)
+
+| Hallazgo | Acción |
+|---|---|
+| Cuatro columnas `uuid` del mismo contenedor sin FK: `guia_remision.emision_id`, `orden_trabajo.emision_id`, `orden_trabajo.prefactura_id`, `pedido.ticket_emision_id` | FK (y su índice). No había filas huérfanas |
+| Unas 250 columnas de texto aceptaban cadenas vacías | 138 `CHECK (length(btrim(col)) > 0)` en nombres, códigos, títulos, descripciones y motivos obligatorios, en los 15 esquemas. Se excluyó `inventario.articulo_parte.codigo` porque tiene 5 códigos vacíos que vienen de AS2 |
+| `uuid` sin FK ni comentario | Comentadas las que son referencia a otro contenedor, polimórfica o a un sistema externo (D1). La única FK que falta a propósito dentro de operaciones es `inventario.salida_mantenimiento.suborden_repuesto_id`: la dependencia va de Mantenimiento hacia Inventario |
+| Unidad como texto en `prefactura_item`, `guia_remision_item`, `orden_trabajo_item` | Se conserva: es copia del documento emitido, que no debe cambiar si se renombra la unidad. Quedó documentado con comentarios en la base |
+
+Verificación: suite de integración completa (25 proyectos) en verde. Las pruebas de Comercial ahora crean emisiones reales y limpian en el orden de las FK.
+
 ## Pendiente (decisión o trabajo posterior)
 
-- **Texto que no admite vacío:** unas 250 columnas de texto obligatorias aceptan cadenas vacías. Propuesta: un `DOMAIN texto_no_vacio` para nombres y códigos.
 - **`comercial.pedido` tiene 52 columnas, 16 con prefijo `as2_`.** Propuesta: sacarlas a una tabla 1:1 `pedido_as2`.
-- **Unidad como texto en tres tablas de ítems:** `guia_remision_item`, `orden_trabajo_item` y `prefactura_item` quedaron fuera de CM-4. O son copia del documento emitido (entonces se documenta con un comentario) o pasan a FK.
 - **Pumping y FCR duplican 15 tablas del motor de flujo** (`paso`, `transicion`, `requisito`…). Es consecuencia de la independencia entre contenedores; se deja hasta que aparezca un tercer flujo.
 - **Datos de AS2 en `inventario.articulo_parte`:** hay códigos de relleno («---------», vacío, «Not Required») y 30 pares repetidos dentro del mismo artículo. Se necesita el criterio de Dynadrill antes de limpiarlos.
-- **Unas 125 tablas sin comentario** y 15 columnas `uuid` terminadas en `_id` sin FK ni comentario.
+- **Unas 125 tablas sin comentario.**
 - **Extensiones:** solo `plpgsql`. Valen `pg_trgm` para las búsquedas con `ILIKE '%q%'` y `pg_stat_statements` para medir.
 
 ## Regresión que apareció durante la auditoría
