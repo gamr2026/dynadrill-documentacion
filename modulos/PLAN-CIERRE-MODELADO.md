@@ -46,29 +46,29 @@ Cada tarea es una rebanada completa: migración, semilla, API, permisos, eventos
 
 **C1. Ya conocidas, sin dependencias externas:**
 
-- [ ] **Metas del tablero HSE (`DashboardMetas`).** En la demo es un JSON `{indicador: meta}`. Modelo nuevo en `qhse`: catálogo `kpi_indicador` (código, categoría, unidad, dirección mayor/menor es mejor, disponible y motivo si no lo está; sembrado con los 16 de HSE-MASTER-001) y `kpi_meta` (indicador por FK, valor, vigente desde, quién; historial inmutable: una meta nueva reemplaza a la anterior). API `GET/PUT /api/v2/qhse/kpi/metas`.
-- [ ] **Firmas adoptadas por los módulos (A3 de `plan-firmas-y-auditoria.md`).** Hoy solo PTW y Desechos publican `*.firmado`. Faltan IPERC, STOP, SWA, Entrega de EPI e Inspección de FCR (ya están en el catálogo de Firmas): publicar el evento y retirar con migración las firmas «de una línea» que cada módulo guarda.
+- [x] (26/10/2026, `qhse/20261026122000_kpi_indicador_y_meta`: catálogo sembrado con los 16 indicadores de la demo y metas con historial inmutable; falta la API GET/PUT de metas) **Metas del tablero HSE (`DashboardMetas`).** En la demo es un JSON `{indicador: meta}`. Modelo nuevo en `qhse`: catálogo `kpi_indicador` (código, categoría, unidad, dirección mayor/menor es mejor, disponible y motivo si no lo está; sembrado con los 16 de HSE-MASTER-001) y `kpi_meta` (indicador por FK, valor, vigente desde, quién; historial inmutable: una meta nueva reemplaza a la anterior). API `GET/PUT /api/v2/qhse/kpi/metas`.
+- [x] (26/10/2026: PTW, desechos, Entrega de EPI e inspección de FCR publican el evento de cada firma conforme al contrato 4.14 (antes `qhse.ptw.firmado` y `qhse.desecho.firmado` no lo cumplían y Firmas los habría mandado a fallidos); el de formalización del PTW pasó a `qhse.ptw.formalizado`. **Decisión: las tablas de firmas de cada módulo se conservan**, porque son el estado del flujo y, en desechos, guardan nombre y cédula de quien firma en papel; ver contrato 4.14) **Firmas adoptadas por los módulos (A3 de `plan-firmas-y-auditoria.md`).** Hoy solo PTW y Desechos publican `*.firmado`. Faltan IPERC, STOP, SWA, Entrega de EPI e Inspección de FCR (ya están en el catálogo de Firmas): publicar el evento y retirar con migración las firmas «de una línea» que cada módulo guarda.
 - [ ] **Aviso automático del límite de desechos.** Sumarlo al emisor horario `AvisosProgramadosService` (hoy solo con `POST desechos/avisos/revisar`).
 - [ ] **Hojas imprimibles de Mantenimiento** (DYN-MNT-RE-008, orden general y operativa): exponer los datos que pide cada hoja desde el backend nuevo.
 - [ ] **Retirar el permiso `comercial.cierre.gestionar`:** permitir en `libs/shared/authz` un permiso «retirado sin reemplazo».
 
 **C2. Las que salieron de la fase B** (detalle y propuesta de cada una en `PARIDAD-MODELO-DEMO.md`; fase B terminada el 26/10/2026):
 
-- [ ] CM-5 Despacho a bodega completo (ítems, bodega, fecha requerida, notas, rechazo)
-- [ ] CM-4 / OP-6 Unidades por catálogo del portal con FK obligatoria (seis tablas de Comercial y cuatro de Operaciones; sin equivalencias con AS2: allí la única unidad es «Dynadrill»)
-- [ ] CM-2 Rechazo de la prefactura (ítems observados, persona, seguimiento)
-- [ ] CM-3 Horas como `time` en documentos operativos y guía
-- [ ] CM-1 Descripción del documento adjunto al pedido
-- [ ] OP-1 Reporte de herramientas de Pumping como el de FCR (desde lo cotizado, distribuido por día; sin selección ni inspecciones; sin kardex)
-- [ ] OP-2 Quién corrigió el día de la bitácora de FCR
-- [ ] OP-3 Company Man precargado en el joblog (Reporte Diario) por FK al contacto
-- [ ] OP-4 / FL-3 Origen y destino por FK a bodega o pozo (reporte de unidad e inspección de vehículo)
-- [ ] OP-5 `tipo_ot` de Pumping como enum
-- [ ] FL-4 Permiso del umbral de riesgo con FK
+- [x] (26/10/2026, `1397ec0`; migraciones en desarrollo; inventario 53 y pedidos 131 en verde. Frontend pendiente: el diálogo de solicitud con bodega, fecha e ítems y la bandeja de Bodega con despachar/rechazar, en la fase de diseño) CM-5 Despacho a bodega completo (ítems, bodega, fecha requerida, notas, rechazo)
+- [x] (26/10/2026, backend `1819a25`, frontend `71683e5`; migraciones aplicadas en desarrollo; pedidos 131, FCR 126, Pumping 39, inventario 53 y catálogos en verde) CM-4 / OP-6 Unidades por catálogo del portal con FK obligatoria (seis tablas de Comercial y cuatro de Operaciones; `periodo` en el catálogo reemplaza a `fcr.unidad_cotizacion`; los códigos de unidad de AS2 al exportar siguen en la consulta C11)
+- [x] (26/10/2026, migración `20261026112000_rechazo_de_prefactura_completo`; pedidos 131 en verde. `prefactura.rechazo_devuelto_a_usuario_id`, `prefactura_rechazo_item` y `prefactura_seguimiento`, inmutables, solo en prefactura rechazada. Falta que el servicio de rechazo los llene y la pantalla) CM-2 Rechazo de la prefactura (ítems observados, persona, seguimiento)
+- [x] (26/10/2026, migración `20261026114000_horas_como_time`; sin CHECK de fin >= inicio porque una actividad puede cruzar la medianoche) CM-3 Horas como `time` en documentos operativos y guía
+- [x] (26/10/2026, migración `20261026113000_descripcion_del_documento_del_pedido`; pedidos 131 en verde; el endpoint acepta `descripcion` y, sin ella, usa el nombre del archivo) CM-1 Descripción del documento adjunto al pedido
+- [x] (26/10/2026, migración `20261026110000_reporte_de_herramientas`; Pumping 39 en verde. Diferencia con FCR: como no hay series ni filas a mano, la fila del reporte es la propia línea cotizada `ticket_linea`; `reporte_item_dia` apunta a ella y la base impide pasar de lo cotizado, usar movilización o un día anterior al inicio. Falta el servicio que precarga y publica `reporte_herramientas_completado`) OP-1 Reporte de herramientas de Pumping como el de FCR (desde lo cotizado, distribuido por día; sin selección ni inspecciones; sin kardex)
+- [x] (26/10/2026, migraciones `fcr/20261026110000_bitacora_corregida_por` y `pumping/20261026112000_reporte_diario_corregido_por`; FCR 126 y Pumping 40 en verde. Se aplicó también al Reporte Diario de Pumping, que tiene el mismo caso; el actor sale del evento de Comercial y el rol es el del usuario) OP-2 Quién corrigió el día de la bitácora de FCR
+- [x] (26/10/2026, migración `20261026111000_representante_del_reporte_diario`; Pumping 40 en verde. `representante_id` FK a `catalogos.persona_contacto`, validado como representante de campo por trigger; sin cargo guardado, porque es el del tipo. Se ajustó el servicio y el DTO del reporte diario; el joblog del frontend queda para el diseño) OP-3 Company Man precargado en el joblog (Reporte Diario) por FK al contacto
+- [x] (26/10/2026, `pumping/20261026114000_origen_destino_por_fk` y `flota/20261026110000_inspeccion_extremos_por_fk`; Pumping 40 en verde; Flota 75 de 78: las 3 fallas son de la carga inicial de unidades de la demo, que se borró en la limpieza. Cambia el contrato: `origen`/`destino`/`puntoPartida` pasan de texto a `{ bodegaId | pozoId }`; el frontend queda para el diseño) OP-4 / FL-3 Origen y destino por FK a bodega o pozo (reporte de unidad e inspección de vehículo)
+- [x] (26/10/2026, migración `pumping/20261026113000_tipo_ot_como_enum`; Pumping 40 en verde) OP-5 `tipo_ot` de Pumping como enum
+- [x] (26/10/2026, `flota/20261026111000_umbral_permiso_por_fk`) FL-4 Permiso del umbral de riesgo con FK
 - [ ] FL-1 Firmas del viaje (con la adopción de Firmas)
-- [ ] QH-1 Catálogo de equipos inspeccionados
+- [x] (26/10/2026, `qhse/20261026121000_equipo_de_inspeccion`; qhse-seguridad 323 en verde. `qhse.equipo` único por tipo y código sin mayúsculas ni espacios; `inspeccion.equipo_id` con FK compuesta al tipo; `stop_tarjeta.equipo_id` opcional. La API sigue recibiendo `equipoCodigo` y da de alta el equipo al inspeccionar) QH-1 Catálogo de equipos inspeccionados
 
-- [ ] **Reporte Diario de Pumping completo (D-PD):** `reporte_diario_adjunto` (FK a `archivos.archivo`) y firmas del supervisor y del cliente por `plataforma/firmas`.
+- [x] (26/10/2026, `pumping/20261026115000_adjunto_del_reporte_diario`; Pumping 41 en verde; Firmas 25 en verde. Tabla del adjunto inmutable con FK a `archivos.archivo`; en el catálogo de Firmas se agregó el documento `pumping_reporte_diario` y los papeles `supervisor` y `representante_cliente`; falta publicar el evento `reporte_diario.firmado` y correr `npm run db:seed:firmas` en desarrollo) **Reporte Diario de Pumping completo (D-PD):** `reporte_diario_adjunto` (FK a `archivos.archivo`) y firmas del supervisor y del cliente por `plataforma/firmas`.
 
 **C3. Indicadores (Reportería y Dashboard), por resúmenes de cada módulo (D-R).** El tablero general de la demo lee 14 servicios y el HSE calcula 16 indicadores: cada módulo dueño expone su `resumen` y el frontend los combina. Datos que no existen en ningún módulo, igual que en la demo: horas-hombre (TRIR, LTIR), nómina (participación STOP) y capacitación; quedan como «no disponible», como en la demo.
 
