@@ -30,11 +30,15 @@ Se revisó la base `dynadrill` (20 esquemas, unas 400 tablas) con consultas sobr
 
 Verificación: suite de integración completa (25 proyectos) en verde. Las pruebas de Comercial ahora crean emisiones reales y limpian en el orden de las FK.
 
+## Tercera tanda (27/10/2026)
+
+- **Códigos de relleno en `inventario.articulo_parte`:** no venían de AS2 sino del Excel del cliente con el registro de inspección y reparación de herramientas (48 herramientas, 914 partes), cargado desde `prisma/data/herramientas.seed-data.ts`. Los valores «---------», vacío, «Not Required», «N/A» y «No#--» (113 filas) significan «la parte no tiene código»: la columna pasó a admitir `NULL`, esas filas quedaron en `NULL` y el archivo de carga también se corrigió. Los 22 códigos que se repiten dentro de una herramienta son piezas iguales en varias posiciones (por ejemplo, o-rings), no errores: no se exige unicidad y la posición de la parte es (`articulo_id`, `orden`). El CHECK de texto no vacío ahora cubre también esta columna (`NULL` permitido).
+- **`pedido_as2`:** se decidió mantener las columnas `as2_` en `pedido` por ahora.
+
 ## Pendiente (decisión o trabajo posterior)
 
-- **`comercial.pedido` tiene 52 columnas, 16 con prefijo `as2_`.** Propuesta: sacarlas a una tabla 1:1 `pedido_as2`.
+- **`comercial.pedido` tiene 52 columnas, 16 con prefijo `as2_`.** Decisión del 27/10/2026: mantenerlas así por ahora; si se separan, sería una tabla 1:1 `pedido_as2`.
 - **Pumping y FCR duplican 15 tablas del motor de flujo** (`paso`, `transicion`, `requisito`…). Es consecuencia de la independencia entre contenedores; se deja hasta que aparezca un tercer flujo.
-- **Datos de AS2 en `inventario.articulo_parte`:** hay códigos de relleno («---------», vacío, «Not Required») y 30 pares repetidos dentro del mismo artículo. Se necesita el criterio de Dynadrill antes de limpiarlos.
 - **Unas 125 tablas sin comentario.**
 - **Extensiones:** solo `plpgsql`. Valen `pg_trgm` para las búsquedas con `ILIKE '%q%'` y `pg_stat_statements` para medir.
 
