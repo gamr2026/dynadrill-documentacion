@@ -162,9 +162,9 @@ Se comparó cada plantilla (`.html`) y hoja de estilos (`.scss`) de la demo con 
 | Facturación | `lista-precios-page` (html y scss) | Quita el botón «Nueva lista»: **el backend nuevo todavía no crea listas de precios** (solo las lee). Es un hueco de backend, no de diseño |
 | Facturación | `lista-precios-detail`, `catalogos-ventas`, `persona-form-dialog`, `reporteria` | Cambian los enlaces de datos (`clienteNombre`, `items` paginados) y la persona gana la cédula opcional. Se conserva |
 | Inventario | `gestionar-despacho-dialog`, `articulo-detail`, `articulo-form-dialog`, `movimiento-dialog` | Despacho con salidas de stock, partes con código opcional y los campos del backend nuevo. Se conserva |
-| Mantenimiento | `suborder-execution-dialog`, `return-to-operation-dialog`, `maintenance-list`, `order-classification-dialog`, `order-detail-panel`, `vehicle-inspection-dialog` | Adaptación al backend nuevo. **Por revisar visualmente** |
+| Mantenimiento | `suborder-execution-dialog`, `return-to-operation-dialog`, `maintenance-list`, `order-classification-dialog`, `order-detail-panel`, `vehicle-inspection-dialog` | Revisado (27/10): solo cambia la lógica de datos (operador por id, inspecciones de flota, reclasificar novedades según permiso). Única pérdida: «Responsable de entrega» en `return-to-operation-dialog`, porque el backend no tiene ese campo |
 | QHSE | `aspecto-ambiental-detail-dialog`, `objetivo-ambiental-detail-dialog`, `legal-page`, `aspecto-ambiental-dialog`, `objetivo-ambiental-dialog` y sus listas | En la demo eran cascarones; el nuevo tiene el detalle real (seguimiento, baja, control). Se conserva |
-| Usuarios | `user-form-dialog`, `user-list-page` | Campos del backend nuevo (rol, permisos). Por revisar |
+| Usuarios | `user-form-dialog`, `user-list-page` | Revisado (27/10): botones y casilla según permiso (crear, editar, inactivar). Sin cambio visual |
 | Pumping y FCR | `ticket-maintenance-card`, `conductor-tareas`, `ticket-detail-page` (35 caracteres), `configuracion-codigos-page` | Diferencias mínimas |
 | Layout | `header` | 4 caracteres (los accesos a Flota, Roles y Auditoría) |
 
@@ -176,6 +176,7 @@ Además hay pantallas **sin equivalente en la demo** (páginas nuevas del backen
 
 ## Ya hecho
 
+- Facturación · «Nueva lista de precios» restaurada (botón y diálogo sobre el backend nuevo, 27/10).
 - Facturación · lista de pedidos (`/facturacion/pedidos`): plantilla de la demo sobre el backend nuevo, escritorio y móvil (commit `e5fa321`).
 
 ## Orden propuesto
