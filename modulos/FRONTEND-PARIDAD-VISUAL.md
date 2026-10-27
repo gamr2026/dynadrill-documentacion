@@ -4,6 +4,8 @@ Inventario de páginas para la fase de diseño (27/10/2026). La demo es `origin/
 
 **Método por página:** abrir la misma pantalla en la demo y en el frontend nuevo, en escritorio (1440 px) y móvil (390 px), capturar las dos y ajustar hasta que coincidan en estructura, jerarquía, espaciado y textos. Los datos son de prueba y se restauran al terminar.
 
+> **Plan vigente de lo que falta:** `PLAN-CIERRE-FRONTEND.md` (27/10/2026). Este documento conserva el inventario de rutas y el avance por pantalla.
+
 ## Resultado del inventario de rutas
 
 El frontend nuevo ya tiene **todas las rutas de la demo**, salvo `qhse/ptw/:id` (la demo abre el PTW en una página propia; el nuevo lo abre en un diálogo). Además agrega rutas que la demo no tiene: Flota, Auditoría, Encuestas, Roles y permisos, Aprobaciones de Pumping, Derrames, Emergencias, Investigaciones, SWA y Términos. Esas no tienen contra qué compararse: se diseñan con el sistema de diseño del propio proyecto.

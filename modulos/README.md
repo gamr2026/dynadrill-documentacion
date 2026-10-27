@@ -2,6 +2,10 @@
 
 Fecha: 17/10/2026. Este directorio existe para que **varias sesiones (agentes) construyan módulos distintos del backend nuevo a la vez** sin pisarse y sabiendo qué hacen las demás.
 
+## Para continuar el trabajo en otra sesión
+
+Lea primero **`PLAN-CIERRE-FRONTEND.md`** (qué falta del frontend, el método para mantener la fidelidad con la demo, el inventario de pantallas por migrar, los pendientes de la base y el corte) y luego `PLAN-CIERRE-MODELADO.md` y `FRONTEND-PARIDAD-VISUAL.md`. Los scripts de apoyo están en `../herramientas-frontend/`.
+
 ## Cómo se usa
 
 1. Cada sesión recibe **un módulo**. Antes de escribir una línea lee, en este orden:
